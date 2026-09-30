@@ -1,0 +1,539 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { MODULES, usePermissions } from "../../lib/permissions";
+import {
+  BoxIcon,
+  CartIcon,
+  ChartIcon,
+  CheckIcon,
+  ChevronIcon,
+  FolderIcon,
+  GridIcon,
+  HomeIcon,
+  ShieldIcon,
+} from "../divine/icons";
+
+type NavLeaf = {
+  label: string;
+  to: string;
+  /** Module whose `view` grant this screen needs. Omitted = any admin. */
+  module?: string;
+};
+
+type NavItem = {
+  label: string;
+  icon: ReactNode;
+  to?: string;
+  soon?: string;
+  module?: string;
+  children?: NavLeaf[];
+  /**
+   * Hides this whole group unless the account's `hallMealAccess` flag is
+   * on — NOT a `userType` check: several accounts can be SUPER_ADMIN, and
+   * this is meant for exactly one (or however many an Admin explicitly
+   * flips it on for), not "every Super Admin". See SSD-Backend's
+   * `hallMealAccessOnly` middleware and models/users' `hallMealAccess`
+   * field. There is no module key for this area at all — Role permissions
+   * can't grant it — so this flag is the only gate.
+   */
+  requiresHallMealAccess?: boolean;
+};
+
+// Everything without a `to` or `children` is a preview of the shape to come,
+// not a dead end — each names the Build Sequence day (§13) that brings it to
+// life, so the shell stays honest about what's real today.
+//
+// Paths are rooted at /admin — this sidebar only ever renders inside the
+// admin section (see app/admin/(dashboard)/layout.tsx).
+const NAV_ITEMS: NavItem[] = [
+  { label: "Dashboard", icon: <HomeIcon />, to: "/admin/dashboard" },
+  {
+    label: "Administration",
+    icon: <ShieldIcon />,
+    children: [
+      { label: "Admin Users", to: "/admin/users", module: MODULES.users },
+      { label: "Customers", to: "/admin/customers", module: MODULES.customers },
+      { label: "Roles", to: "/admin/roles", module: MODULES.roles },
+      { label: "Permissions", to: "/admin/permissions", module: MODULES.roles },
+    ],
+  },
+  {
+    label: "Masters",
+    icon: <GridIcon />,
+    children: [
+      { label: "Printing Group", to: "/admin/masters/printing-groups", module: MODULES.printingGroups },
+      { label: "Print Split Setting", to: "/admin/masters/print-split-setting", module: MODULES.printSplitSetting },
+      { label: "Unit", to: "/admin/masters/units", module: MODULES.units },
+      { label: "Deity", to: "/admin/masters/deities", module: MODULES.deities },
+      { label: "GST", to: "/admin/masters/gst", module: MODULES.gst },
+      { label: "GL Group", to: "/admin/masters/gl-groups", module: MODULES.glGroups },
+      { label: "General Ledger (GL)", to: "/admin/masters/general-ledgers", module: MODULES.generalLedgers },
+      { label: "Category", to: "/admin/masters/categories", module: MODULES.categories },
+      { label: "Sub Category", to: "/admin/masters/sub-categories", module: MODULES.subCategories },
+      { label: "Item", to: "/admin/masters/items", module: MODULES.items },
+      { label: "Service", to: "/admin/masters/services", module: MODULES.services },
+      { label: "General Item", to: "/admin/masters/general-items", module: MODULES.generalItems },
+      { label: "Event", to: "/admin/masters/events", module: MODULES.events },
+      { label: "Nakshathiram", to: "/admin/masters/nakshathirams", module: MODULES.nakshathirams },
+      { label: "Payment Mode", to: "/admin/masters/payment-modes", module: MODULES.paymentModes },
+    ],
+  },
+  {
+    label: "CMS",
+    icon: <FolderIcon className="h-[18px] w-[18px]" />,
+    children: [
+      { label: "CMS Menu", to: "/admin/cms/menus", module: MODULES.cmsMenus },
+      { label: "CMS Pages", to: "/admin/cms/pages", module: MODULES.cmsPages },
+    ],
+  },
+  {
+    label: "Transactions",
+    icon: <CartIcon />,
+    children: [
+      { label: "Admin Booking", to: "/admin/transactions/admin-booking", module: MODULES.adminBooking },
+      { label: "POS Transactions", to: "/admin/transactions/pos-transactions", module: MODULES.posTransactions },
+    ],
+  },
+  {
+    label: "Order Confirmation",
+    icon: <CheckIcon className="h-[18px] w-[18px]" />,
+    children: [
+      { label: "POS Order Confirmation", to: "/admin/order-confirmation/pos", module: MODULES.posOrderConfirmation },
+    ],
+  },
+  {
+    label: "Inventory",
+    icon: <BoxIcon />,
+    children: [
+      { label: "Inventory Adjustment", to: "/admin/inventory/adjustments", module: MODULES.inventory },
+      { label: "Available Stock", to: "/admin/inventory/available-stock", module: MODULES.inventory },
+      { label: "Inventory History", to: "/admin/inventory/history", module: MODULES.inventory },
+      { label: "Low Stock Report", to: "/admin/inventory/low-stock", module: MODULES.inventory },
+    ],
+  },
+  {
+    label: "Hall & Meal Management",
+    icon: <GridIcon />,
+    requiresHallMealAccess: true,
+    children: [
+      { label: "Hall Category", to: "/admin/hall-meal/hall-categories" },
+      { label: "Hall", to: "/admin/hall-meal/halls" },
+      { label: "Hall Purpose", to: "/admin/hall-meal/hall-purposes" },
+      { label: "Additional Service", to: "/admin/hall-meal/additional-services" },
+      { label: "Hall Package", to: "/admin/hall-meal/hall-packages" },
+      { label: "Food Menu Item", to: "/admin/hall-meal/food-menu-items" },
+      { label: "Food Package", to: "/admin/hall-meal/food-packages" },
+      { label: "Hall Availability", to: "/admin/hall-meal/hall-availability" },
+      { label: "Hall Booking", to: "/admin/hall-meal/hall-bookings" },
+    ],
+  },
+  {
+    label: "Reports",
+    icon: <ChartIcon />,
+    children: [
+      { label: "Custom Reports", to: "/admin/reports/custom", module: MODULES.reports },
+    ],
+  },
+];
+
+type SidebarProps = {
+  open: boolean;
+  onClose: () => void;
+};
+
+/**
+ * A gradient can't be applied to an icon's color via a plain `text-*`
+ * class the way it can to text (no `background-clip: text` equivalent for
+ * SVG strokes/fills) — this renders the exact same chevron path as
+ * ChevronIcon, but filled through its own inline `<linearGradient>` def
+ * instead of `currentColor`. `id` needs to be unique per rendered instance
+ * (each NavGroup uses its own label) since SVG gradient ids are looked up
+ * globally in the page's DOM, not scoped to the element that defines them.
+ */
+function GradientChevron({ id, className = "", active = false }: { id: string; className?: string; active?: boolean }) {
+  return (
+    <svg
+      className={`h-[18px] w-[18px] shrink-0 ${active ? "" : "drop-shadow-[0_1px_1px_rgba(255,251,240,0.7)]"} ${className}`}
+      viewBox="0 0 20 20"
+    >
+      <defs>
+        {/* Two dark, saturated stops (no light-gold end) — the sidebar's own
+            background is a cream/gold/orange wash, so the chevron's old
+            orange->light-gold tail was landing almost exactly on top of it.
+            Staying dark end-to-end keeps it visible against every part of
+            that background, not just the darker corners. A row that's the
+            *active* one is solid maroon itself though, so that same dark
+            fill would now vanish into ITS background instead — solid white
+            there, matching the row's own white label/icon color. */}
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          {active ? (
+            <>
+              <stop offset="0%" stopColor="#ffffff" />
+              <stop offset="100%" stopColor="#ffffff" />
+            </>
+          ) : (
+            <>
+              <stop offset="0%" stopColor="#7c1527" />
+              <stop offset="100%" stopColor="#8f1c30" />
+            </>
+          )}
+        </linearGradient>
+      </defs>
+      <path
+        fill={`url(#${id})`}
+        fillRule="evenodd"
+        d="M5.2 7.5a.75.75 0 011.06.02L10 11.293l3.74-3.773a.75.75 0 111.08 1.04l-4.25 4.286a.75.75 0 01-1.08 0L5.18 8.56a.75.75 0 01.02-1.06z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+// Selected rows sit on the gold temple photo, so they need a solid maroon
+// fill, a gold edge, and white type — ivory hover chips would vanish into
+// the same peach wash as the background.
+// Every nav row carries a transparent border-l-[3px] so toggling
+// active/inactive never shifts text by the border's width.
+const ACTIVE_NAV_CLASS =
+  "border-gold-400 bg-maroon text-white font-semibold shadow-[0_8px_18px_-8px_rgba(124,21,39,0.7)] ring-1 ring-inset ring-gold-400/45";
+// A resting glass chip, not just bare text on the photo — the same
+// legibility problem the expanded Masters panel had (text floating
+// directly on a busy, variable-brightness background) applied to every
+// top-level row before a user ever hovers or expands anything.
+const INACTIVE_NAV_CLASS =
+  "border-transparent bg-white/25 text-ink-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)] hover:bg-maroon/15 hover:text-maroon hover:shadow-[inset_0_0_0_1px_rgba(124,21,39,0.12)]";
+// A group header while its children are showing — distinct from both the
+// solid-maroon ACTIVE_NAV_CLASS (reserved for the actual current-page row)
+// and the plain hover-only INACTIVE_NAV_CLASS, so "this section is open"
+// reads at a glance even when none of its children is the active route.
+const OPEN_GROUP_CLASS =
+  "border-gold-400/60 bg-white/55 text-maroon shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6)] ring-1 ring-inset ring-maroon/20 backdrop-blur-sm";
+
+/**
+ * Static column on desktop; a slide-in drawer with a backdrop below `md`.
+ *
+ * Groups are filtered by permission from the leaves upward: a child appears
+ * only if the account can view its module, and a group disappears entirely
+ * once none of its children survive. Rendering an empty "Administration"
+ * heading would be worse than rendering nothing — it implies access that
+ * clicking cannot reach.
+ *
+ * `collapsed` is desktop-only — the mobile drawer always opens at full
+ * width, so there's nothing to collapse there. The wordmark lockup
+ * (SSD_Full_Logo.webp) only fits a full-width column; the mobile drawer and
+ * the collapsed rail both fall back to the mark alone (SSD_Logo.webp).
+ */
+export default function Sidebar({ open, onClose }: SidebarProps) {
+  const { can, user } = usePermissions();
+  const [collapsed, setCollapsed] = useState(false);
+
+  const navItems = NAV_ITEMS
+    // Structural gate first: a group requiring hallMealAccess never even
+    // reaches the permission-based filtering below, no matter what a Role
+    // grants or whether the account is a Super Admin.
+    .filter((item) => !item.requiresHallMealAccess || user?.hallMealAccess === true)
+    .map((item) => {
+      if (!item.children) return item;
+      return {
+        ...item,
+        children: item.children.filter((c) => !c.module || can(c.module, "view")),
+      };
+    })
+    .filter((item) =>
+      item.children
+        ? item.children.length > 0
+        : !item.module || can(item.module, "view"),
+    );
+
+  // Clicking a collapsed group needs somewhere for its children to appear —
+  // expand the rail back out rather than trying to flyout a menu with no
+  // icons to show (NavLeaf children don't carry their own icon).
+  const expandForGroup = () => setCollapsed(false);
+
+  return (
+    <>
+      <AnimatePresence>
+        {open && (
+          <motion.button
+            type="button"
+            aria-label="Close menu"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-30 cursor-default bg-navy-950/70 backdrop-blur-sm md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* md:z-30 (not md:z-auto) is load-bearing: the collapse-toggle button
+          below deliberately overlaps into the topbar's rectangle, and this
+          element always has a transform applied (the translate-x-* below),
+          which makes it a stacking context — so the button's own z-index
+          can't out-rank the topbar on its own. The aside itself has to
+          out-rank the topbar's `relative z-20` for that overlapping half to
+          render on top instead of hiding underneath it. */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex h-full w-64 shrink-0 flex-col border-r border-maroon/20 shadow-[8px_0_28px_-6px_rgba(124,21,39,0.18)] transition-[width,transform] duration-300 ease-out print:hidden md:relative md:z-30 md:translate-x-0 ${
+          open ? "translate-x-0" : "-translate-x-full"
+        } ${collapsed ? "md:w-20" : ""}`}
+      >
+        <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+          <img
+            src="/admin_sideMenu_bg.webp"
+            alt=""
+            className="h-full w-full object-cover object-[78%_center]"
+          />
+          {/* Left-weighted cream so labels stay dark and readable; the
+              gopuram and lamp still show through on the right edge. */}
+          <div className="absolute inset-0 bg-gradient-to-r from-[#fff7e6]/90 via-[#ffe9c4]/58 to-[#f0c070]/22" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#fffaf0]/50 via-transparent to-[#7c1527]/22" />
+        </div>
+
+        <div className={`relative z-10 flex items-center px-4 py-6 ${collapsed ? "md:justify-center md:px-2" : "justify-center"}`}>
+          {collapsed ? (
+            <img src="/SSD_Logo.webp" alt="Sri Siva Durga Temple" className="hidden h-11 w-11 object-contain drop-shadow-[0_0_12px_rgba(255,248,232,0.95)] md:block" />
+          ) : null}
+          {/* Mobile drawer always shows the mark alone, regardless of the
+              desktop `collapsed` state (which mobile never sets). */}
+          <img
+            src="/SSD_Logo.webp"
+            alt="Sri Siva Durga Temple"
+            className={`h-11 w-11 object-contain drop-shadow-[0_0_12px_rgba(255,248,232,0.95)] md:hidden`}
+          />
+          {!collapsed && (
+            <img
+              src="/SSD_Full_Logo.webp"
+              alt="Sri Siva Durga Temple"
+              className="hidden h-auto w-full max-w-[188px] object-contain drop-shadow-[0_1px_10px_rgba(255,248,232,0.95)] md:block"
+            />
+          )}
+        </div>
+
+        {/* Collapse toggle — desktop only, the mobile drawer has the topbar's
+            hamburger for open/close instead. Sits right on the seam where
+            the sidebar's right edge meets the topbar (vertically centered
+            on the topbar's own h-16), straddling both. It clears the logo
+            safely: the logo is horizontally centered with padding, so it
+            never reaches this far-right edge regardless of which header
+            variant (mark alone vs. full wordmark) is showing.
+            -right-3.5 centers the 28px (h-7 w-7) button exactly on the
+            boundary line.
+
+            The button's own z-30 isn't what keeps it visible — `<aside>`
+            always carries a `translate-x-*` class (open/-translate-x-full),
+            and any non-`none` transform creates a new stacking context. That
+            traps every z-index inside the sidebar's subtree, so the aside as
+            a WHOLE competes against the topbar using its own top-level
+            z-index — which was `md:z-auto` (participates in plain DOM order,
+            effectively z-0), losing to the topbar's `relative z-20` and
+            hiding the overlapping half of this button underneath it
+            regardless of its internal z-30. Fixed by giving <aside> itself
+            `md:z-30` — see that class for the full explanation. */}
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="absolute -right-3.5 top-[18px] z-30 hidden h-7 w-7 items-center justify-center rounded-full border border-maroon/30 bg-maroon text-white transition-[transform,box-shadow,background-color] duration-200 hover:scale-110 hover:bg-maroon-hover hover:shadow-[0_0_14px_2px_rgba(124,21,39,0.55)] md:flex"
+        >
+          <ChevronIcon className={`h-3.5 w-3.5 transition-transform duration-300 ${collapsed ? "-rotate-90" : "rotate-90"}`} />
+        </button>
+
+        <nav className="relative z-10 flex-1 space-y-1 overflow-y-auto px-3 pb-4">
+          {navItems.map((item) => {
+            if (item.children) {
+              return (
+                <NavGroup
+                  key={item.label}
+                  item={item}
+                  onNavigate={onClose}
+                  collapsed={collapsed}
+                  onExpandSidebar={expandForGroup}
+                />
+              );
+            }
+            if (item.to) {
+              return (
+                <NavLeafLink
+                  key={item.label}
+                  to={item.to}
+                  icon={item.icon}
+                  label={item.label}
+                  onNavigate={onClose}
+                  collapsed={collapsed}
+                />
+              );
+            }
+            return (
+              <div
+                key={item.label}
+                className={`flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] text-ink-500 ${collapsed ? "md:justify-center" : ""}`}
+                title={item.soon ? `Arrives ${item.soon} of the Build Sequence` : "Not built yet"}
+              >
+                <span className="shrink-0">{item.icon}</span>
+                <span className={`flex-1 ${collapsed ? "md:hidden" : ""}`}>{item.label}</span>
+                {item.soon && (
+                  <span className={`rounded-full border border-maroon/20 bg-white/50 px-2 py-0.5 text-[10px] tracking-wide text-maroon ${collapsed ? "md:hidden" : ""}`}>
+                    {item.soon}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+
+        <div className={`relative z-10 border-t border-maroon/15 bg-[#fff6e3]/55 px-5 py-4 text-[11px] font-medium text-maroon ${collapsed ? "md:hidden" : ""}`}>
+          Sri Siva Durga Temple &copy; {new Date().getFullYear()}
+        </div>
+      </aside>
+    </>
+  );
+}
+
+function NavLeafLink({
+  to,
+  icon,
+  label,
+  onNavigate,
+  collapsed,
+}: {
+  to: string;
+  icon: ReactNode;
+  label: string;
+  onNavigate: () => void;
+  collapsed: boolean;
+}) {
+  const pathname = usePathname();
+  const isActive = pathname === to;
+
+  return (
+    <Link
+      href={to}
+      onClick={onNavigate}
+      title={collapsed ? label : undefined}
+      className={`flex items-center gap-3 rounded-xl border-l-[3px] py-2.5 pl-[9px] pr-3 text-[13.5px] font-semibold transition-[background-color,color,box-shadow] duration-200 ${collapsed ? "md:justify-center" : ""} ${
+        isActive ? ACTIVE_NAV_CLASS : INACTIVE_NAV_CLASS
+      }`}
+    >
+      <span className="shrink-0">{icon}</span>
+      <span className={collapsed ? "md:hidden" : ""}>{label}</span>
+    </Link>
+  );
+}
+
+function NavGroup({
+  item,
+  onNavigate,
+  collapsed,
+  onExpandSidebar,
+}: {
+  item: NavItem;
+  onNavigate: () => void;
+  collapsed: boolean;
+  onExpandSidebar: () => void;
+}) {
+  const pathname = usePathname();
+  const holdsCurrentRoute = (item.children ?? []).some(
+    (c) => c.to === pathname,
+  );
+  const [expanded, setExpanded] = useState(holdsCurrentRoute);
+
+  // Landing on a child by any route — a deep link, the Roles page's
+  // "Permissions" shortcut — should reveal where you are in the tree.
+  useEffect(() => {
+    if (holdsCurrentRoute) setExpanded(true);
+  }, [holdsCurrentRoute]);
+
+  function handleClick() {
+    if (collapsed) {
+      // Nothing to toggle open in a rail with no room for children —
+      // expand the sidebar itself instead, pre-opened to this group.
+      onExpandSidebar();
+      setExpanded(true);
+      return;
+    }
+    setExpanded((v) => !v);
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={handleClick}
+        aria-expanded={expanded}
+        title={collapsed ? item.label : undefined}
+        className={`flex w-full items-center gap-3 rounded-xl border-l-[3px] py-2.5 pl-[9px] pr-3 text-[13.5px] font-semibold transition-[background-color,color,box-shadow,backdrop-filter] duration-200 ${collapsed ? "md:justify-center" : ""} ${
+          holdsCurrentRoute && !expanded
+            ? ACTIVE_NAV_CLASS
+            : expanded && !collapsed
+              ? OPEN_GROUP_CLASS
+              : INACTIVE_NAV_CLASS
+        }`}
+      >
+        <span className="shrink-0">{item.icon}</span>
+        <span className={`flex-1 text-left ${collapsed ? "md:hidden" : ""}`}>{item.label}</span>
+        <GradientChevron
+          id={`nav-chevron-${item.label.replace(/\s+/g, "-")}`}
+          active={holdsCurrentRoute && !expanded}
+          className={`transition-transform duration-200 ${collapsed ? "md:hidden" : ""} ${expanded ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {expanded && !collapsed && (
+          <motion.ul
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            {/* Frosted glass panel — the temple photo behind the sidebar
+                otherwise runs right under these rows with nothing to mark
+                where the expanded group starts/ends, so "expanded" and
+                "collapsed" looked almost identical at a glance. The blurred,
+                translucent backdrop plus a soft border/shadow gives the
+                open group its own visible surface, sitting above whichever
+                background is showing through. */}
+            <div className="relative ml-[22px] mt-1 overflow-hidden rounded-xl border border-white/60 bg-white/40 p-1.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.55),0_6px_20px_-8px_rgba(124,21,39,0.35)] backdrop-blur-md">
+              {/* The rail gives the children a visible spine to hang from, so
+                  the nesting reads at a glance rather than from indent alone.
+                  A real `bg-gradient-to-b` div instead of `border-l` — a
+                  border-color can't be a gradient either. */}
+              <div className="relative space-y-0.5 pl-3">
+                <span aria-hidden="true" className="absolute top-0.5 bottom-0.5 left-0 w-[1.5px] bg-gradient-to-b from-crimson-600 via-flame-500 to-[#FFC145]" />
+                {(item.children ?? []).map((child) => (
+                  <ChildLink key={child.to} to={child.to} label={child.label} onNavigate={onNavigate} />
+                ))}
+              </div>
+            </div>
+          </motion.ul>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ChildLink({ to, label, onNavigate }: { to: string; label: string; onNavigate: () => void }) {
+  const pathname = usePathname();
+  const isActive = pathname === to;
+
+  return (
+    <li>
+      <Link
+        href={to}
+        onClick={onNavigate}
+        className={`relative block rounded-lg border-l-[3px] py-2 pl-[9px] pr-3 text-[13px] font-medium transition-[background-color,color,box-shadow] duration-200 ${
+          isActive ? ACTIVE_NAV_CLASS : INACTIVE_NAV_CLASS
+        }`}
+      >
+        {label}
+      </Link>
+    </li>
+  );
+}

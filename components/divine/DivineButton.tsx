@@ -1,0 +1,166 @@
+import type { ButtonHTMLAttributes } from "react";
+
+type DivineButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  loading?: boolean;
+  variant?: "primary" | "ghost" | "marigold" | "flame" | "leaf";
+  /**
+   * Full-bleed by default — right for a standalone page CTA (Sign In,
+   * Reset Password). A Cancel/Save pair inside a modal footer is a
+   * different shape entirely: two buttons stretching to fill a row each
+   * reads as oversized and, worse, as *equally weighted* actions when one
+   * of them is destructive or primary and the other isn't. Pass `false`
+   * there for an intrinsically-sized button the footer can right-align.
+   */
+  fullWidth?: boolean;
+};
+
+/**
+ * The gold ceremonial button — no shadow at rest; hovering raises it with a
+ * symmetric, all-sides glow (box-shadow with a 0,0 offset, not a directional
+ * drop shadow) plus a shimmer sweep. Spinner while a request is in flight.
+ */
+export default function DivineButton({
+  loading,
+  variant = "primary",
+  fullWidth = true,
+  children,
+  className = "",
+  disabled,
+  ...rest
+}: DivineButtonProps) {
+  // Standalone page CTAs (Sign In, Reset Password) keep their original
+  // roomier size; a modal footer's Cancel/Save pair gets a visibly smaller
+  // button to match — that size difference is what makes fullWidth read as
+  // "the one big action on this screen" versus "one of two footer controls".
+  const sizing = fullWidth ? "px-5 py-3 text-[15px]" : "px-4 py-2 text-[13.5px]";
+
+  if (variant === "ghost") {
+    return (
+      <button
+        className={`relative ${fullWidth ? "w-full" : "w-auto"} rounded-md border border-[#f97316] bg-white ${sizing} font-accent tracking-wide text-[#9a3412] transition-[color,border-color,background-color,box-shadow] duration-300 hover:border-[#ea580c] hover:bg-orange-50 disabled:opacity-50 ${className}`}
+        disabled={disabled || loading}
+        {...rest}
+      >
+        {/* Previously rendered `children` directly with no loading state at
+            all — every other variant shows a spinner while `loading` is
+            true; this one just silently disabled, so a click during a slow
+            (or instantly-erroring) request looked like nothing happened. */}
+        <span className="relative z-10 flex items-center justify-center gap-2">
+          {loading && (
+            <svg className="h-4 w-4 animate-spin text-[#9a3412]" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+            </svg>
+          )}
+          {children}
+        </span>
+      </button>
+    );
+  }
+
+  if (variant === "marigold") {
+    return (
+      <button
+        className={`group relative ${fullWidth ? "w-full" : "w-auto"} overflow-hidden rounded-md border border-maroon/30 bg-maroon ${sizing} font-accent font-bold tracking-wide text-white shadow-[0_3px_8px_-2px_rgba(0,0,0,0.15),0_10px_26px_-10px_rgba(124,21,39,0.55)] transition-[transform,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:bg-maroon-hover hover:shadow-[0_4px_10px_-2px_rgba(0,0,0,0.2),0_16px_34px_-8px_rgba(124,21,39,0.7)] active:translate-y-0 active:shadow-[0_3px_8px_-2px_rgba(0,0,0,0.15),0_10px_26px_-10px_rgba(124,21,39,0.55)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:bg-maroon disabled:hover:shadow-[0_3px_8px_-2px_rgba(0,0,0,0.15),0_10px_26px_-10px_rgba(124,21,39,0.55)] ${className}`}
+        disabled={disabled || loading}
+        {...rest}
+      >
+        <span className="relative z-10 flex items-center justify-center gap-2">
+          {loading && (
+            <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+            </svg>
+          )}
+          {children}
+        </span>
+        {!disabled && !loading && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 -z-0 animate-[shimmer-sweep_2.6s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-0 group-hover:opacity-100"
+          />
+        )}
+      </button>
+    );
+  }
+
+  if (variant === "leaf") {
+    return (
+      <button
+        className={`group relative ${fullWidth ? "w-full" : "w-auto"} overflow-hidden rounded-md border border-emerald-700/30 bg-emerald-600 ${sizing} font-accent font-bold tracking-wide text-white shadow-[0_3px_8px_-2px_rgba(0,0,0,0.15),0_10px_26px_-10px_rgba(4,120,87,0.55)] transition-[transform,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:bg-emerald-700 hover:shadow-[0_4px_10px_-2px_rgba(0,0,0,0.2),0_16px_34px_-8px_rgba(4,120,87,0.7)] active:translate-y-0 active:shadow-[0_3px_8px_-2px_rgba(0,0,0,0.15),0_10px_26px_-10px_rgba(4,120,87,0.55)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:bg-emerald-600 disabled:hover:shadow-[0_3px_8px_-2px_rgba(0,0,0,0.15),0_10px_26px_-10px_rgba(4,120,87,0.55)] ${className}`}
+        disabled={disabled || loading}
+        {...rest}
+      >
+        <span className="relative z-10 flex items-center justify-center gap-2">
+          {loading && (
+            <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+            </svg>
+          )}
+          {children}
+        </span>
+        {!disabled && !loading && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 -z-0 animate-[shimmer-sweep_2.6s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-0 group-hover:opacity-100"
+          />
+        )}
+      </button>
+    );
+  }
+
+  if (variant === "flame") {
+    return (
+      <button
+        className={`group relative ${fullWidth ? "w-full" : "w-auto"} overflow-hidden rounded-md border border-maroon/30 bg-maroon ${sizing} font-accent font-bold tracking-wide text-white shadow-[0_3px_8px_-2px_rgba(0,0,0,0.15),0_10px_26px_-10px_rgba(124,21,39,0.55)] transition-[transform,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:bg-maroon-hover hover:shadow-[0_4px_10px_-2px_rgba(0,0,0,0.2),0_16px_34px_-8px_rgba(124,21,39,0.7)] active:translate-y-0 active:shadow-[0_3px_8px_-2px_rgba(0,0,0,0.15),0_10px_26px_-10px_rgba(124,21,39,0.55)] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:bg-maroon disabled:hover:shadow-[0_3px_8px_-2px_rgba(0,0,0,0.15),0_10px_26px_-10px_rgba(124,21,39,0.55)] ${className}`}
+        disabled={disabled || loading}
+        {...rest}
+      >
+        <span className="relative z-10 flex items-center justify-center gap-2">
+          {loading && (
+            <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
+            </svg>
+          )}
+          {children}
+        </span>
+        {!disabled && !loading && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 -z-0 animate-[shimmer-sweep_2.6s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-0 group-hover:opacity-100"
+          />
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      className={`group relative ${fullWidth ? "w-full" : "w-auto"} overflow-hidden rounded-md border-0 bg-gradient-to-r from-maroon to-[#FFA733] ${sizing} font-accent font-semibold tracking-wide text-white shadow-[0_2px_6px_-1px_rgba(0,0,0,0.08)] transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-6px_rgba(124,21,39,0.55)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 ${className}`}
+      disabled={disabled || loading}
+      {...rest}
+    >
+      <span className="relative z-10 flex items-center justify-center gap-2">
+        {loading && (
+          <svg className="h-4 w-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path
+              className="opacity-90"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z"
+            />
+          </svg>
+        )}
+        {children}
+      </span>
+      {!disabled && !loading && (
+        <span
+          aria-hidden="true"
+          className="absolute inset-0 -z-0 animate-[shimmer-sweep_2.6s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-0 group-hover:opacity-100"
+        />
+      )}
+    </button>
+  );
+}
