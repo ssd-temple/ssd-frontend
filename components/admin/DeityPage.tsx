@@ -1,0 +1,374 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import DataTable, { StatusToggleCell, EditIconButton, DeleteIconButton, MasterImageCell, type DataTableColumn } from "./DataTable";
+import FormDrawer from "./FormDrawer";
+import ConfirmDialog from "./ConfirmDialog";
+import ImportExportBar from "./ImportExportBar";
+import ImportReviewModal from "./ImportReviewModal";
+import DivineInput from "../divine/DivineInput";
+import DivineListbox, { type ListboxOption } from "../divine/DivineListbox";
+import DivineStatusSelect from "../divine/DivineStatusSelect";
+import DivineMasterImageUpload from "../divine/DivineMasterImageUpload";
+import DivineColorPicker from "../divine/DivineColorPicker";
+import DivineButton from "../divine/DivineButton";
+import TamilNameField from "./TamilNameField";
+import { api, unwrap, type ApiEnvelope } from "../../lib/api";
+import { useApiResource } from "../../lib/useApiResource";
+import { MODULES, usePermissions } from "../../lib/permissions";
+import { toast } from "../../lib/toastStore";
+import { withOptionalImage } from "../../lib/withOptionalImage";
+import { patchMasterStatus } from "../../lib/patchMasterStatus";
+import { usePageSize } from "../../lib/usePageSize";
+
+type Ref = { _id: string; name: string };
+
+export type Deity = {
+  _id: string;
+  code: string;
+  name: string;
+  tamilName: string;
+  printingGroup: Ref | null;
+  image: string | null;
+  color?: string;
+  status: number;
+  // Lower sorts first; deities sharing the same value fall back to
+  // alphabetical by name (the backend does this sort, not the frontend —
+  // see SSD-Backend's models/deities and every deity-listing query).
+  // displayOrder governs SELECTION lists (pickers, POS cart); printOrder is
+  // the separate order deities print in on a ticket — the two can differ.
+  displayOrder: number;
+  printOrder: number;
+};
+
+const schema = z.object({
+  code: z.string().trim().min(1, "Code is required").max(20),
+  name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
+  tamilName: z.string().trim(),
+  printingGroup: z.string().min(1, "Printing group is required"),
+  status: z.number(),
+  displayOrder: z.number().int("Must be a whole number").min(0, "Must be 0 or greater"),
+  printOrder: z.number().int("Must be a whole number").min(0, "Must be 0 or greater"),
+  color: z.string().regex(/^(#[0-9A-Fa-f]{6})?$/, "Enter a valid hex colour"),
+});
+
+type FormValues = z.infer<typeof schema>;
+
+export default function DeityPage() {
+  const { can } = usePermissions();
+  const canCreate = can(MODULES.deities, "fullAccess");
+  const canEdit = can(MODULES.deities, "edit");
+  const canView = can(MODULES.deities, "view");
+  const { items, total, list, create, update, remove } = useApiResource<Deity>(api, "/masters/deities");
+  const [importOpen, setImportOpen] = useState(false);
+
+  const [printingGroups, setPrintingGroups] = useState<ListboxOption[]>([]);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const { pageSize, setPageSize } = usePageSize();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editing, setEditing] = useState<Deity | null>(null);
+  const [deleting, setDeleting] = useState<Deity | null>(null);
+  const [createImage, setCreateImage] = useState<File | null>(null);
+  const [editImage, setEditImage] = useState<File | null>(null);
+  const [imageRemoved, setImageRemoved] = useState(false);
+
+  useEffect(() => {
+    api
+      .get<ApiEnvelope<{ items: { _id: string; name: string }[] }>>("/masters/printing-groups", {
+        params: { status: 1, pageSize: 100 },
+      })
+      .then((res) => setPrintingGroups(unwrap(res).items.map((g) => ({ value: g._id, label: g.name }))));
+  }, []);
+
+  useEffect(() => {
+    list.run({ page, pageSize, search: search || undefined, status: statusFilter || undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, search, statusFilter]);
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    setValue,
+    control,
+    formState: { errors },
+  } = useForm<FormValues>({ resolver: zodResolver(schema) });
+  const nameValue = watch("name") ?? "";
+  const tamilNameValue = watch("tamilName") ?? "";
+
+  function openCreate() {
+    setEditing(null);
+    reset({ code: "", name: "", tamilName: "", printingGroup: "", status: 1, displayOrder: 0, printOrder: 0, color: "" });
+    setCreateImage(null);
+    setImageRemoved(false);
+    create.setError(null);
+    setDrawerOpen(true);
+  }
+
+  function openEdit(deity: Deity) {
+    setEditing(deity);
+    reset({
+      code: deity.code,
+      name: deity.name,
+      tamilName: deity.tamilName,
+      printingGroup: deity.printingGroup?._id ?? "",
+      status: deity.status,
+      displayOrder: deity.displayOrder ?? 0,
+      printOrder: deity.printOrder ?? 0,
+      color: deity.color ?? "",
+    });
+    setEditImage(null);
+    setImageRemoved(false);
+    update.setError(null);
+    setDrawerOpen(true);
+  }
+
+  const submit = handleSubmit(async (values) => {
+    const payload = withOptionalImage(values, editing ? editImage : createImage, {
+      existingValue: editing?.image ?? null,
+      imageRemoved,
+    });
+    const ok = editing ? await update.run(editing._id, payload) : await create.run(payload);
+    if (ok !== undefined) {
+      setDrawerOpen(false);
+      if (editing) toast.updated("Deity updated successfully.");
+      else toast.created("Deity created successfully.");
+    }
+  });
+
+  const columns: DataTableColumn<Deity>[] = [
+    {
+      key: "image",
+      label: "Image",
+      render: (d) => <MasterImageCell src={d.image} alt={d.name} />,
+    },
+    {
+      key: "color",
+      label: "Color",
+      render: (d) =>
+        d.color ? (
+          <span className="inline-flex h-5 w-5 rounded-full border border-gold-500/25" style={{ backgroundColor: d.color }} />
+        ) : (
+          <span className="text-ink-400">—</span>
+        ),
+    },
+    {
+      key: "displayOrder",
+      label: "Display Order",
+      render: (d) => <span className="tabular-nums text-ink-500">{d.displayOrder ?? 0}</span>,
+    },
+    {
+      key: "printOrder",
+      label: "Print Order",
+      render: (d) => <span className="tabular-nums text-ink-500">{d.printOrder ?? 0}</span>,
+    },
+    { key: "code", label: "Code", render: (d) => <span className="font-medium tabular-nums text-amber-700">{d.code}</span> },
+    { key: "name", label: "Name", render: (d) => <span className="font-medium">{d.name}</span> },
+    { key: "tamilName", label: "Tamil Name", render: (d) => <span className="text-ink-500">{d.tamilName || "—"}</span> },
+    {
+      key: "printingGroup",
+      label: "Printing Group",
+      render: (d) => <span className="text-ink-500">{d.printingGroup?.name ?? "—"}</span>,
+    },
+    { key: "status", label: "Status", render: (d) => (
+      <StatusToggleCell status={d.status} canEdit={canEdit} onChange={(status) => patchMasterStatus(update, d._id, status, "Deity")} />
+    ) },
+  ];
+
+  return (
+    <>
+      <DataTable
+        title="Deity Master"
+        subtitle="Deities available for archana/seva bookings, grouped for printing."
+        columns={columns}
+        rows={items}
+        rowKey={(d) => d._id}
+        loading={list.submitting}
+        search={search}
+        onSearchChange={(v) => {
+          setPage(1);
+          setSearch(v);
+        }}
+        searchPlaceholder="Search deities…"
+        statusFilter={statusFilter}
+        onStatusFilterChange={(v) => {
+          setPage(1);
+          setStatusFilter(v);
+        }}
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPage(1);
+          setPageSize(size);
+        }}
+        onCreate={canCreate ? openCreate : undefined}
+        createLabel="Add Deity"
+        emptyMessage="No deities yet — create the first one."
+        toolbarActions={
+          <ImportExportBar
+            client={api}
+            basePath="/masters/deities"
+            entityLabel="Deity"
+            canExport={canView}
+            canImport={canCreate}
+            onOpenImport={() => setImportOpen(true)}
+          />
+        }
+        rowActions={(d) => (
+          <div className="flex justify-end gap-2">
+            {canEdit && <EditIconButton onClick={() => openEdit(d)} />}
+            {canCreate && <DeleteIconButton onClick={() => setDeleting(d)} />}
+          </div>
+        )}
+      />
+
+      <ImportReviewModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        client={api}
+        basePath="/masters/deities"
+        entityLabel="Deity"
+        previewFields={[
+          { key: "code", label: "Code" },
+          { key: "name", label: "Name" },
+          { key: "printingGroup", label: "Printing Group" },
+        ]}
+        onImported={() => list.run({ page, pageSize, search: search || undefined, status: statusFilter || undefined })}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        title="Delete this deity?"
+        message={deleting ? `"${deleting.name} (${deleting.code})" will be removed.` : ""}
+        confirmLabel="Delete deity"
+        tone="danger"
+        error={remove.error}
+        loading={remove.submitting}
+        onCancel={() => {
+          remove.setError(null);
+          setDeleting(null);
+        }}
+        onConfirm={async () => {
+          if (!deleting) return;
+          const ok = await remove.run(deleting._id);
+          if (ok !== undefined) {
+            setDeleting(null);
+            toast.deleted("Deity deleted successfully.");
+          }
+        }}
+      />
+
+      <FormDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title={editing ? "Edit Deity" : "Add Deity"}
+        subtitle={editing ? `${editing.name} · ${editing.code}` : "Define a new deity."}
+        error={create.error || update.error}
+        footer={
+          <div className="flex justify-end gap-3">
+            <DivineButton variant="ghost" fullWidth={false} type="button" onClick={() => setDrawerOpen(false)}>
+              Cancel
+            </DivineButton>
+            <DivineButton variant="flame" fullWidth={false} type="submit" form="deity-form" loading={create.submitting || update.submitting}>
+              {editing ? "Save changes" : "Save"}
+            </DivineButton>
+          </div>
+        }
+      >
+        <form id="deity-form" onSubmit={submit} noValidate className="space-y-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <DivineInput staticLabel label="Code" error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Name" error={errors.name?.message} {...register("name")} />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <TamilNameField staticLabel
+              englishName={nameValue}
+              value={tamilNameValue}
+              onChange={(v) => setValue("tamilName", v, { shouldDirty: true })}
+              error={errors.tamilName?.message}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Controller
+              control={control}
+              name="printingGroup"
+              render={({ field }) => (
+                <DivineListbox
+                  label="Printing Group"
+                  value={field.value}
+                  onChange={field.onChange}
+                  options={printingGroups}
+                  placeholder="Select printing group"
+                  error={errors.printingGroup?.message}
+                />
+              )}
+            />
+            <Controller
+              control={control}
+              name="status"
+              render={({ field }) => (
+                <DivineStatusSelect value={field.value} onChange={field.onChange} />
+              )}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <DivineInput
+              staticLabel
+              label="Display Order"
+              type="number"
+              min={0}
+              step={1}
+              hint="Order deities appear in selection/dropdown lists."
+              error={errors.displayOrder?.message}
+              {...register("displayOrder", { valueAsNumber: true })}
+            />
+            <DivineInput
+              staticLabel
+              label="Print Order"
+              type="number"
+              min={0}
+              step={1}
+              hint="Order deities print in on a ticket."
+              error={errors.printOrder?.message}
+              {...register("printOrder", { valueAsNumber: true })}
+            />
+          </div>
+          <Controller
+            control={control}
+            name="color"
+            render={({ field }) => (
+              <DivineColorPicker
+                optional
+                label="Deity Card Colour (optional)"
+                value={field.value}
+                onChange={field.onChange}
+                error={errors.color?.message}
+              />
+            )}
+          />
+          <DivineMasterImageUpload
+            label="Deity Image"
+            value={editing?.image}
+            onChange={(file) => {
+              (editing ? setEditImage : setCreateImage)(file);
+              setImageRemoved(!file);
+            }}
+          />
+          <p className="-mt-3 text-[12.5px] text-ink-400">
+            Display Order controls wherever deities are selected (deity mapping pickers, POS selection, this list).
+            Print Order controls the order deities print in on a ticket — the two are independent. Either way,
+            deities left at the same number sort alphabetically among themselves.
+          </p>
+        </form>
+      </FormDrawer>
+    </>
+  );
+}

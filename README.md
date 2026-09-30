@@ -1,2 +1,1 @@
-# ssd-frontend
-Sivadurga temple frontend
+# SSD-Frontend
