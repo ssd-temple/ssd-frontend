@@ -13,6 +13,14 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.33.4 --activate
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# NEXT_PUBLIC_* values are inlined into the browser bundle at build time, and
+# .dockerignore excludes .env*, so they must be passed as --build-arg.
+ARG NEXT_PUBLIC_AUTH_API_BASE_URL
+ARG NEXT_PUBLIC_API_BASE_URL
+ARG NEXT_PUBLIC_NETS_SERVICE_URL=http://localhost:2003
+ENV NEXT_PUBLIC_AUTH_API_BASE_URL=$NEXT_PUBLIC_AUTH_API_BASE_URL \
+    NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
+    NEXT_PUBLIC_NETS_SERVICE_URL=$NEXT_PUBLIC_NETS_SERVICE_URL
 # Needs output: "standalone" set in next.config.ts (already added).
 RUN pnpm build
 

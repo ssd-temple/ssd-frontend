@@ -22,6 +22,12 @@ const nextConfig: NextConfig = {
   // Traces only the files each route actually needs into .next/standalone,
   // so the Docker image doesn't have to ship the full node_modules tree.
   output: "standalone",
+  // pnpm + standalone: the tracer keeps only @swc/helpers' cjs/ and package.json,
+  // but Next's runtime require-hook resolves its esm/ files, so `node server.js`
+  // crashes with MODULE_NOT_FOUND. Ship the whole package.
+  outputFileTracingIncludes: {
+    "/*": ["./node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**/*"],
+  },
 };
 
 export default nextConfig;
