@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { MODULES, usePermissions } from "../../lib/permissions";
+import { USER_TYPES } from "../../lib/userTypes";
 import {
   BoxIcon,
   CartIcon,
@@ -15,6 +16,7 @@ import {
   FolderIcon,
   GridIcon,
   HomeIcon,
+  MailIcon,
   ShieldIcon,
 } from "../divine/icons";
 
@@ -23,6 +25,8 @@ type NavLeaf = {
   to: string;
   /** Module whose `view` grant this screen needs. Omitted = any admin. */
   module?: string;
+  /** Shown only for the bootstrap system-administrator account. */
+  superAdminOnly?: boolean;
 };
 
 type NavItem = {
@@ -56,10 +60,20 @@ const NAV_ITEMS: NavItem[] = [
     label: "Administration",
     icon: <ShieldIcon />,
     children: [
+      { label: "Entity", to: "/admin/entities", superAdminOnly: true },
       { label: "Admin Users", to: "/admin/users", module: MODULES.users },
       { label: "Customers", to: "/admin/customers", module: MODULES.customers },
       { label: "Roles", to: "/admin/roles", module: MODULES.roles },
       { label: "Permissions", to: "/admin/permissions", module: MODULES.roles },
+    ],
+  },
+  {
+    // Email template master and the per-event mapping that actually sends.
+    label: "Templates Configuration",
+    icon: <MailIcon />,
+    children: [
+      { label: "Email Template", to: "/admin/templates/email-templates", module: MODULES.emailTemplates },
+      { label: "Email Template Mapping", to: "/admin/templates/email-template-mappings", module: MODULES.emailTemplates },
     ],
   },
   {
@@ -241,7 +255,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       if (!item.children) return item;
       return {
         ...item,
-        children: item.children.filter((c) => !c.module || can(c.module, "view")),
+        children: item.children.filter((c) => {
+          if (c.superAdminOnly && user?.userType !== USER_TYPES.SUPER_ADMIN) return false;
+          return !c.module || can(c.module, "view");
+        }),
       };
     })
     .filter((item) =>

@@ -22,6 +22,8 @@ type DivineInputProps = InputHTMLAttributes<HTMLInputElement> & {
   loading?: boolean;
   /** Admin master fields: maroon label above, visible placeholder, peach border. */
   staticLabel?: boolean;
+  /** Red asterisk after the label. Does not change validation. */
+  required?: boolean;
   /** Defaults to the end of the field on master forms, start on login/POS. */
   iconPosition?: "start" | "end";
 };
@@ -39,6 +41,7 @@ const DivineInput = forwardRef<HTMLInputElement, DivineInputProps>(
       revealable,
       containerClassName = "",
       staticLabel = false,
+      required = false,
       loading = false,
       placeholder,
       iconPosition,
@@ -94,6 +97,7 @@ const DivineInput = forwardRef<HTMLInputElement, DivineInputProps>(
         <div className="w-full">
           <label htmlFor={inputId} className={FORM_LABEL}>
             {label}
+            {required && <span className="text-crimson-500"> *</span>}
           </label>
           <div
             className={`${FORM_CONTROL} ${error ? FORM_CONTROL_ERROR : focused ? FORM_CONTROL_FOCUS : ""} ${containerClassName}`}
@@ -151,6 +155,7 @@ const DivineInput = forwardRef<HTMLInputElement, DivineInputProps>(
                 />
                 <label htmlFor={inputId} className="divine-label font-body">
                   {label}
+                  {required && <span className="text-crimson-500"> *</span>}
                 </label>
               </div>
               {trailing}

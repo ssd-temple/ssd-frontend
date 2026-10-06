@@ -16,6 +16,8 @@ type DivineTextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
   error?: string;
   hint?: string;
   staticLabel?: boolean;
+  /** Red asterisk after the label. Does not change validation. */
+  required?: boolean;
 };
 
 function resize(el: HTMLTextAreaElement | null) {
@@ -25,7 +27,7 @@ function resize(el: HTMLTextAreaElement | null) {
 }
 
 const DivineTextarea = forwardRef<HTMLTextAreaElement, DivineTextareaProps>(
-  ({ label, error, hint, id, className = "", rows = 4, staticLabel = false, placeholder, ...rest }, forwardedRef) => {
+  ({ label, error, hint, id, className = "", rows = 4, staticLabel = false, required = false, placeholder, ...rest }, forwardedRef) => {
     const [focused, setFocused] = useState(false);
     const autoId = useId();
     const inputId = id ?? autoId;
@@ -47,6 +49,7 @@ const DivineTextarea = forwardRef<HTMLTextAreaElement, DivineTextareaProps>(
         <div className="w-full">
           <label htmlFor={inputId} className={FORM_LABEL}>
             {label}
+            {required && <span className="text-crimson-500"> *</span>}
           </label>
           <div
             className={`${FORM_CONTROL_MULTILINE} ${error ? FORM_CONTROL_ERROR : focused ? FORM_CONTROL_FOCUS : ""}`}
@@ -112,6 +115,7 @@ const DivineTextarea = forwardRef<HTMLTextAreaElement, DivineTextareaProps>(
               />
               <label htmlFor={inputId} className="divine-label font-body">
                 {label}
+                {required && <span className="text-crimson-500"> *</span>}
               </label>
             </div>
           </div>

@@ -17,6 +17,8 @@ type DivineListboxProps = {
   options: ListboxOption[];
   error?: string;
   placeholder?: string;
+  /** Red asterisk after the label. Does not change validation. */
+  required?: boolean;
   className?: string;
   disabled?: boolean;
   /** Extra classes appended to the trigger button — e.g. a page that wants
@@ -77,6 +79,7 @@ export default function DivineListbox({
   options,
   error,
   placeholder = "Select…",
+  required = false,
   className = "",
   disabled = false,
   containerClassName = "",
@@ -168,6 +171,7 @@ export default function DivineListbox({
       {label && (
         <label htmlFor={triggerId} className={FORM_LABEL}>
           {label}
+          {required && <span className="text-crimson-500"> *</span>}
         </label>
       )}
       <div
