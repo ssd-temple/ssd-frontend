@@ -79,8 +79,8 @@ function mappingSubject(row: EmailTemplateMappingRecord) {
 
 export default function EmailTemplateMappingPage() {
   const { can } = usePermissions();
-  const canCreate = can(MODULES.emailTemplates, "fullAccess");
-  const canEdit = can(MODULES.emailTemplates, "edit");
+  const canCreate = can(MODULES.emailTemplateMappings, "fullAccess");
+  const canEdit = can(MODULES.emailTemplateMappings, "edit");
   const { items, total, list, create, update, remove } = useApiResource<EmailTemplateMappingRecord>(
     api,
     "/notifications/email-template-mappings"

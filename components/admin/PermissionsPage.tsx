@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import DivineListbox from "../divine/DivineListbox";
 import DivineButton from "../divine/DivineButton";
 import StatusBanner from "../divine/StatusBanner";
@@ -125,6 +125,7 @@ export default function PermissionsPage() {
   }
 
   function handleRoleChange(roleId: string) {
+    setSaved(false);
     setSelectedRoleId(roleId);
     const params = new URLSearchParams(searchParams.toString());
     if (roleId) params.set("role", roleId);
@@ -170,7 +171,33 @@ export default function PermissionsPage() {
 
       {load.error && <StatusBanner tone="error">{load.error}</StatusBanner>}
       {save.error && <StatusBanner tone="error">{save.error}</StatusBanner>}
-      {saved && <StatusBanner tone="success">Permissions updated successfully.</StatusBanner>}
+
+      <AnimatePresence>
+        {saved && (
+          <motion.div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-navy-950/35 p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSaved(false)}
+          >
+            <motion.div
+              role="status"
+              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.96 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+              onClick={(event) => event.stopPropagation()}
+              className="flex items-center gap-2.5 rounded-xl bg-emerald-600 px-4 py-3 text-[13.5px] font-medium text-white shadow-[0_16px_36px_-12px_rgba(5,150,105,0.7)]"
+            >
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/25">
+                <CheckIcon className="h-4 w-4 text-white" />
+              </span>
+              Saved successfully.
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="max-w-xs">
         <DivineListbox

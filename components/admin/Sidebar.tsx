@@ -73,7 +73,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: <MailIcon />,
     children: [
       { label: "Email Template", to: "/admin/templates/email-templates", module: MODULES.emailTemplates },
-      { label: "Email Template Mapping", to: "/admin/templates/email-template-mappings", module: MODULES.emailTemplates },
+      { label: "Email Template Mapping", to: "/admin/templates/email-template-mappings", module: MODULES.emailTemplateMappings },
     ],
   },
   {

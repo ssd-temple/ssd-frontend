@@ -10,6 +10,7 @@ export const MODULES = {
   customers: "customers",
   roles: "roles",
   emailTemplates: "email-templates",
+  emailTemplateMappings: "email-template-mappings",
   printingGroups: "printing-groups",
   printSplitSetting: "print-split-setting",
   units: "units",
