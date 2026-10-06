@@ -71,6 +71,12 @@ function refLabel(value: Ref | string | null | undefined) {
   return value.name || "—";
 }
 
+function mappingSubject(row: EmailTemplateMappingRecord) {
+  if (row.subject?.trim()) return row.subject;
+  if (typeof row.template === "object" && row.template.subject?.trim()) return row.template.subject;
+  return "";
+}
+
 export default function EmailTemplateMappingPage() {
   const { can } = usePermissions();
   const canCreate = can(MODULES.emailTemplates, "fullAccess");
@@ -231,7 +237,7 @@ export default function EmailTemplateMappingPage() {
     {
       key: "subject",
       label: "Subject",
-      render: (row) => <span className="block max-w-[240px] truncate text-ink-500">{row.subject || "—"}</span>,
+      render: (row) => <span className="block max-w-[240px] truncate text-ink-500">{mappingSubject(row) || "—"}</span>,
     },
     {
       key: "status",
