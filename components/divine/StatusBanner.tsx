@@ -71,7 +71,7 @@ export default function StatusBanner({
               <p className="mt-1 leading-relaxed text-[13px] text-amber-950">{children}</p>
             </div>
           ) : (
-            <span>{children}</span>
+            <span className="min-w-0 flex-1 leading-relaxed">{children}</span>
           )}
         </div>
       </motion.div>

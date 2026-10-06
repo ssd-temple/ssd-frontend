@@ -132,7 +132,7 @@ export default function AuthShell({
               >
                 {title}
               </h1>
-              <p className="mx-auto mt-1.5 max-w-[90vw] font-body text-[13px] text-ink-500 sm:max-w-none sm:text-sm sm:whitespace-nowrap">
+              <p className="mx-auto mt-1.5 max-w-full px-1 font-body text-[13px] leading-relaxed text-ink-500 sm:text-sm">
                 {subtitle}
               </p>
             </motion.div>

@@ -116,9 +116,14 @@ export default function SetPasswordView({
           <EmblemLoader size="sm" label="Checking link…" />
         </div>
       ) : tokenError ? (
-        <div className="py-2 text-center">
-          <StatusBanner tone="error">{tokenError}</StatusBanner>
-          <Link href={loginHref} className="text-[13px] text-[#e8590c] underline-offset-2 hover:underline">
+        <div className="flex flex-col items-stretch gap-4 px-0.5 pb-1 text-center sm:px-1">
+          <StatusBanner tone="error" className="mb-0 w-full text-left">
+            <span className="block min-w-0 leading-relaxed">{tokenError}</span>
+          </StatusBanner>
+          <Link
+            href={loginHref}
+            className="inline-flex min-h-11 items-center justify-center self-center rounded-lg px-3 py-2 text-[14px] font-medium text-[#e8590c] underline-offset-2 hover:underline"
+          >
             ← Back to sign in
           </Link>
         </div>

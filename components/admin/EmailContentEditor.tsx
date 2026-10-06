@@ -65,7 +65,7 @@ function escapeHtml(text: string) {
 }
 
 function buttonHtml(href: string, text: string, fill: string, ink: string) {
-  return `<p style="margin:24px 0;"><a href="${href}" style="display:inline-block;padding:12px 28px;background:${fill};color:${ink};text-decoration:none;border-radius:8px;font-weight:600;">${text}</a></p>`;
+  return `<div align="center" style="margin:28px 0;text-align:center;"><a href="${href}" target="_blank" style="background-color:${fill};color:${ink};display:inline-block;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;line-height:20px;text-align:center;text-decoration:none;padding:14px 36px;border-radius:8px;">${text}</a></div>`;
 }
 
 /**

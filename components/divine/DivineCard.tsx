@@ -108,7 +108,7 @@ export default function DivineCard({
             className={
               isMarigold
                 ? "relative px-7 py-8 sm:px-8"
-                : "relative px-8 py-7 sm:px-10 sm:py-8"
+                : "relative px-5 py-7 sm:px-10 sm:py-8"
             }
           >
             {children}
