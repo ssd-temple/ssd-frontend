@@ -40,11 +40,10 @@ export const MODULES = {
  * hand-rolls its own `user.permissions?.[x]?.[y]` chain and gets the
  * SUPER_ADMIN bypass subtly wrong.
  *
- * This governs what the UI *offers*, never what the API *allows*. The
- * server re-derives permissions from the database on every single request
- * (User-Service's auth-guard.js), so editing this map in localStorage
- * reveals nothing and unlocks nothing — it only produces menu entries that
- * answer 403.
+ * This is the grant snapshot stored at login. The API checks the same
+ * snapshot on the token, so a role edit changes the menu and the pages
+ * together the next time that user signs in. A refresh keeps the current
+ * menu.
  */
 export function can(
   user: { userType?: string; permissions?: PermissionMap } | null,

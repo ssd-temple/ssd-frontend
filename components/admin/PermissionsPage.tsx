@@ -105,7 +105,7 @@ export default function PermissionsPage() {
   const save = useAsyncAction(async () => {
     await authApi.put(`/roles/${selectedRoleId}/permissions`, { permissions: rows });
     setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setTimeout(() => setSaved(false), 1000);
   });
 
   useEffect(() => {
@@ -164,8 +164,8 @@ export default function PermissionsPage() {
       <div>
         <h1 className="font-display text-[28px] font-bold text-ink-100">Permissions</h1>
         <p className="mt-1 text-[13px] text-ink-500">
-          Choose a role, then set View / Edit / Full Access per module. Saving takes effect on that
-          role's users immediately — including anyone already signed in.
+          Choose a role, then set View / Edit / Full Access per module. The side menu changes after
+          that user logs out and logs in again. A refresh keeps the menu from their current sign-in.
         </p>
       </div>
 

@@ -20,9 +20,9 @@ export type SessionUser = {
    */
   hallMealAccess?: boolean;
   /**
-   * What this account can reach, as resolved at login. Used only to decide
-   * which nav entries and buttons to render — the server re-checks every
-   * request against the database regardless of what's stored here.
+   * What this account can reach, as resolved at login. The side menu reads
+   * this until the next sign-in, and the API checks the same snapshot on
+   * the token.
    */
   permissions?: Record<string, { view: boolean; edit: boolean; fullAccess: boolean }>;
   /**
