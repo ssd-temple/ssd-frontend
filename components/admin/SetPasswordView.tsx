@@ -101,12 +101,12 @@ export default function SetPasswordView({
       ? {
           eyebrow: "Welcome to the Temple",
           title: "Create Your Password",
-          subtitle: tokenInfo ? `Namaste ${tokenInfo.name.split(" ")[0]} — set a password only you know.` : "This is your first step inside — set a password only you know.",
+          subtitle: tokenInfo ? `Dear ${tokenInfo.name.split(" ")[0]} — set a password only you know.` : "This is your first step inside — set a password only you know.",
         }
       : {
           eyebrow: "Sri Siva Durga Temple",
           title: "Reset Your Password",
-          subtitle: tokenInfo ? `Namaste ${tokenInfo.name.split(" ")[0]} — choose a new password to continue.` : "Choose a new password to continue your seva.",
+          subtitle: tokenInfo ? `Dear ${tokenInfo.name.split(" ")[0]} — choose a new password to continue.` : "Choose a new password to continue your seva.",
         };
 
   return (
@@ -116,16 +116,46 @@ export default function SetPasswordView({
           <EmblemLoader size="sm" label="Checking link…" />
         </div>
       ) : tokenError ? (
-        <div className="flex flex-col items-stretch gap-4 px-0.5 pb-1 text-center sm:px-1">
-          <StatusBanner tone="error" className="mb-0 w-full text-left">
-            <span className="block min-w-0 leading-relaxed">{tokenError}</span>
-          </StatusBanner>
-          <Link
-            href={loginHref}
-            className="inline-flex min-h-11 items-center justify-center self-center rounded-lg px-3 py-2 text-[14px] font-medium text-[#e8590c] underline-offset-2 hover:underline"
-          >
-            ← Back to sign in
-          </Link>
+        <div
+          role="alert"
+          className="mx-auto flex w-full max-w-sm flex-col items-center gap-4 px-1 pb-1 text-center sm:px-2"
+        >
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-crimson-500/30 bg-crimson-500/10 text-crimson-600">
+            <svg className="h-7 w-7" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 6a1 1 0 112 0v4a1 1 0 11-2 0V6zm1 8a1.25 1.25 0 100-2.5A1.25 1.25 0 0010 14z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </span>
+          <div className="w-full min-w-0 space-y-1.5">
+            <p className="font-accent text-[12px] font-bold uppercase tracking-[0.16em] text-crimson-600">
+              This link can&apos;t be used
+            </p>
+            <p className="break-words text-[14.5px] leading-relaxed text-crimson-600 sm:text-[15px]">{tokenError}</p>
+          </div>
+          <div className="flex w-full flex-col items-stretch gap-2 sm:flex-row sm:justify-center">
+            {mode === "reset" && (
+              <Link
+                href={loginHref.replace(/\/login$/, "/forgot-password")}
+                className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg bg-crimson-500 px-4 py-2 text-[14px] font-semibold text-white transition-colors hover:bg-crimson-600 sm:flex-none"
+              >
+                Request a new link
+              </Link>
+            )}
+            <Link
+              href={loginHref}
+              className="inline-flex min-h-11 flex-1 items-center justify-center rounded-lg px-4 py-2 text-[14px] font-medium text-[#e8590c] underline-offset-2 hover:underline sm:flex-none"
+            >
+              ← Back to sign in
+            </Link>
+          </div>
+          {mode === "activate" && (
+            <p className="text-[12.5px] leading-relaxed text-ink-500/80">
+              Need a new activation email? Please contact your temple administrator.
+            </p>
+          )}
         </div>
       ) : success ? (
         <SuccessState
