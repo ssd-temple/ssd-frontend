@@ -126,7 +126,7 @@ export default function UsersPage() {
   const roleOptions = roles.map((r) => ({ value: r._id, label: r.name }));
 
   useEffect(() => {
-    list.run({ page, pageSize, search: search || undefined, status: statusFilter || undefined });
+    list.run({ page, pageSize, search: search || undefined, status: statusFilter || undefined, excludeUserType: USER_TYPES.CUSTOMER });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize, search, statusFilter]);
 
