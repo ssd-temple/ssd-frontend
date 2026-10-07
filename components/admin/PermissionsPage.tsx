@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import DivineListbox from "../divine/DivineListbox";
 import DivineButton from "../divine/DivineButton";
 import StatusBanner from "../divine/StatusBanner";
 import { CheckIcon } from "../divine/icons";
+import DataTable, { EditIconButton, type DataTableColumn } from "./DataTable";
+import { usePageSize } from "../../lib/usePageSize";
+import { toast } from "../../lib/toastStore";
 import { authApi, unwrap, type ApiEnvelope } from "../../lib/api";
 import { useAsyncAction } from "../../lib/useAsyncAction";
 import { MODULES, usePermissions } from "../../lib/permissions";
@@ -64,25 +67,34 @@ function normalize(row: PermissionRow, field: "view" | "edit" | "fullAccess", va
   return next;
 }
 
+/** A role counts as "allocated" once it grants at least one module permission. */
+function hasAllocation(role: Role) {
+  return (role.permissions ?? []).some((p) => p.view || p.edit || p.fullAccess);
+}
+
 export default function PermissionsPage() {
   const { can } = usePermissions();
   const canSave = can(MODULES.roles, "fullAccess");
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const preselectedRole = searchParams.get("role") ?? "";
 
   const [roles, setRoles] = useState<Role[]>([]);
   const [modules, setModules] = useState<ModuleDef[]>([]);
-  const [selectedRoleId, setSelectedRoleId] = useState(preselectedRole);
+  const [view, setView] = useState<"list" | "form">("list");
+  // null while adding — the role is then picked from the dropdown.
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+  const [selectedRoleId, setSelectedRoleId] = useState("");
   const [rows, setRows] = useState<PermissionRow[]>([]);
   const [saved, setSaved] = useState(false);
 
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const { pageSize, setPageSize } = usePageSize();
+
   const load = useAsyncAction(async () => {
     const [rolesRes, modulesRes] = await Promise.all([
-      // status: 1 — an inactive role grants nothing (auth-guard filters it
-      // out when resolving), so configuring one would be a no-op.
-      authApi.get<ApiEnvelope<{ items: Role[]; total: number }>>("/roles", { params: { pageSize: 100, status: 1 } }),
+      authApi.get<ApiEnvelope<{ items: Role[]; total: number }>>("/roles", { params: { pageSize: 100 } }),
       authApi.get<ApiEnvelope<ModuleDef[]>>("/roles/modules"),
     ]);
 
@@ -91,25 +103,28 @@ export default function PermissionsPage() {
     // checkbox on them is inert — offering the choice at all invites someone
     // to tick boxes, save, and reasonably conclude permissions are broken.
     const roleItems = unwrap(rolesRes).items.filter((r) => !r.isLocked);
+    const moduleItems = unwrap(modulesRes);
     setRoles(roleItems);
-    setModules(unwrap(modulesRes));
-
-    // A stale ?role= pointing at a locked or deleted role falls back to the
-    // first configurable one instead of leaving the page on a blank grid.
-    const preselectIsValid = roleItems.some((r) => r._id === preselectedRole);
-    const initialRoleId = (preselectIsValid ? preselectedRole : roleItems[0]?._id) || "";
-    setSelectedRoleId(initialRoleId);
-    applyRoleToRows(initialRoleId, roleItems, unwrap(modulesRes));
+    setModules(moduleItems);
+    return { roleItems, moduleItems };
   });
 
   const save = useAsyncAction(async () => {
     await authApi.put(`/roles/${selectedRoleId}/permissions`, { permissions: rows });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1000);
+    toast.updated("Permissions updated successfully.");
+    await load.run();
+    setView("list");
   });
 
   useEffect(() => {
-    load.run();
+    // Roles' "Permissions" action links here with ?role=<id> — open that role
+    // straight in the form, as an edit if it already has access, else an add.
+    load.run().then((result) => {
+      if (!result || !preselectedRole) return;
+      const role = result.roleItems.find((r) => r._id === preselectedRole);
+      if (!role) return;
+      openForm(hasAllocation(role) ? role._id : null, role._id, result.roleItems, result.moduleItems);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -124,15 +139,57 @@ export default function PermissionsPage() {
     );
   }
 
+  function openForm(
+    editId: string | null,
+    roleId: string,
+    roleList: Role[] = roles,
+    moduleList: ModuleDef[] = modules
+  ) {
+    setSaved(false);
+    save.setError(null);
+    setEditingRoleId(editId);
+    setSelectedRoleId(roleId);
+    applyRoleToRows(roleId, roleList, moduleList);
+    setView("form");
+  }
+
   function handleRoleChange(roleId: string) {
     setSaved(false);
     setSelectedRoleId(roleId);
-    const params = new URLSearchParams(searchParams.toString());
-    if (roleId) params.set("role", roleId);
-    else params.delete("role");
-    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname);
     applyRoleToRows(roleId, roles, modules);
   }
+
+  // Add screen: only active roles that have nothing allocated yet. An
+  // inactive role grants nothing (auth-guard filters it out when resolving),
+  // so configuring one would be a no-op.
+  const unallocatedRoles = roles.filter((r) => r.status === 1 && !hasAllocation(r));
+  const editingRole = roles.find((r) => r._id === editingRoleId);
+
+  const allocatedRoles = roles.filter(hasAllocation);
+  const filteredRoles = allocatedRoles.filter((r) => {
+    if (statusFilter !== "" && String(r.status) !== statusFilter) return false;
+    const q = search.trim().toLowerCase();
+    return !q || r.name.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q);
+  });
+  const pagedRoles = filteredRoles.slice((page - 1) * pageSize, page * pageSize);
+
+  const listColumns: DataTableColumn<Role>[] = [
+    { key: "name", label: "Role", render: (r) => <span className="font-medium">{r.name}</span> },
+    { key: "description", label: "Description", render: (r) => <span className="text-ink-500">{r.description || "—"}</span> },
+    {
+      key: "modules",
+      label: "Modules allocated",
+      render: (r) => {
+        const count = r.permissions.filter((p) => p.view || p.edit || p.fullAccess).length;
+        return <span className="tabular-nums">{count}</span>;
+      },
+    },
+    {
+      key: "status",
+      label: "Status",
+      render: (r) => <span className={r.status === 1 ? "text-emerald-700" : "text-ink-500"}>{r.status === 1 ? "Active" : "Inactive"}</span>,
+    },
+  ];
 
   function toggleColumn(field: "view" | "edit" | "fullAccess", checked: boolean) {
     setRows((prev) => prev.map((r) => normalize(r, field, checked)));
@@ -159,12 +216,66 @@ export default function PermissionsPage() {
     []
   );
 
+  if (view === "list") {
+    return (
+      <DataTable
+        title="Permissions"
+        subtitle="Roles that already have module permissions allocated. Add permissions for a new role, or edit an existing one."
+        columns={listColumns}
+        rows={pagedRoles}
+        rowKey={(r) => r._id}
+        loading={load.submitting}
+        search={search}
+        onSearchChange={(v) => {
+          setPage(1);
+          setSearch(v);
+        }}
+        searchPlaceholder="Search by role name…"
+        statusFilter={statusFilter}
+        onStatusFilterChange={(v) => {
+          setPage(1);
+          setStatusFilter(v);
+        }}
+        page={page}
+        pageSize={pageSize}
+        total={filteredRoles.length}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPage(1);
+          setPageSize(size);
+        }}
+        onCreate={canSave ? () => openForm(null, "") : undefined}
+        createLabel="Add Permissions"
+        emptyMessage="No roles have permissions allocated yet."
+        rowActions={(r) =>
+          canSave ? (
+            <div className="flex justify-end">
+              <EditIconButton onClick={() => openForm(r._id, r._id)} />
+            </div>
+          ) : null
+        }
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-[28px] font-bold text-ink-100">Permissions</h1>
+        <button
+          type="button"
+          onClick={() => setView("list")}
+          className="mb-4 inline-flex items-center gap-2 rounded-md border border-maroon/40 bg-white px-4 py-2 font-accent text-[13.5px] font-semibold text-maroon shadow-[0_2px_6px_-1px_rgba(0,0,0,0.12)] transition-[transform,box-shadow,background-color,color] duration-200 hover:-translate-y-0.5 hover:bg-maroon hover:text-white hover:shadow-[0_10px_24px_-6px_rgba(124,21,39,0.5)] active:translate-y-0"
+        >
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+            <path d="M12 4 6 10l6 6" />
+          </svg>
+          Back to list
+        </button>
+        <h1 className="font-display text-[28px] font-bold text-ink-100">
+          {editingRoleId ? "Edit Permissions" : "Add Permissions"}
+        </h1>
         <p className="mt-1 text-[13px] text-ink-500">
-          Choose a role, then set View / Edit / Full Access per module. The side menu changes after
+          Set View / Edit / Full Access per module. The side menu changes after
           that user logs out and logs in again. A refresh keeps the menu from their current sign-in.
         </p>
       </div>
@@ -200,18 +311,28 @@ export default function PermissionsPage() {
       </AnimatePresence>
 
       <div className="max-w-xs">
-        <DivineListbox
-          label="Role"
-          value={selectedRoleId}
-          onChange={handleRoleChange}
-          options={roles.map((r) => ({ value: r._id, label: r.name }))}
-        />
+        {editingRoleId ? (
+          <div>
+            <p className="mb-1.5 text-[12.5px] font-medium text-ink-300">Role</p>
+            <p className="rounded-md border border-slate-200 bg-ivory-100 px-4 py-2.5 text-[13.5px] text-ink-100">
+              {editingRole?.name}
+            </p>
+          </div>
+        ) : (
+          <DivineListbox
+            label="Role"
+            value={selectedRoleId}
+            onChange={handleRoleChange}
+            placeholder="Select a role"
+            options={unallocatedRoles.map((r) => ({ value: r._id, label: r.name }))}
+          />
+        )}
       </div>
 
-      {roles.length === 0 && !load.submitting && (
+      {!editingRoleId && unallocatedRoles.length === 0 && !load.submitting && (
         <p className="rounded-xl border border-gold-500/20 bg-gold-500/5 px-4 py-2.5 text-[12.5px] text-amber-600">
-          No configurable roles yet. System Admin and Customer aren't listed here — their access is
-          decided by account type, so module permissions don't apply to them. Create a role to begin.
+          Every active role already has permissions allocated. Edit one from the list, or create a new
+          role first. System Admin and Customer aren't listed — their access is decided by account type.
         </p>
       )}
 
@@ -325,7 +446,11 @@ export default function PermissionsPage() {
 
       {canSave ? (
         <div className="max-w-xs">
-          <DivineButton onClick={() => save.run()} loading={save.submitting} disabled={!selectedRoleId}>
+          <DivineButton
+            onClick={() => save.run()}
+            loading={save.submitting}
+            disabled={!selectedRoleId || (!editingRoleId && !rows.some((r) => r.view))}
+          >
             Save Permissions
           </DivineButton>
         </div>
