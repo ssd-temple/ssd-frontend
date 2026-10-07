@@ -189,6 +189,14 @@ export default function GeneralItemPage() {
 
   const { fields, append, remove: removeRow } = useFieldArray({ control, name: "categoryDetails" });
   const isInventoryApplicable = watch("isInventoryApplicable");
+
+  // Threshold and Quantity Reduction only apply with inventory, so put them
+  // back to their defaults while hidden instead of saving stale values.
+  useEffect(() => {
+    if (isInventoryApplicable) return;
+    setValue("threshold", 0);
+    setValue("quantityReduction", 1);
+  }, [isInventoryApplicable, setValue]);
   const nameValue = watch("name");
   const tamilNameValue = watch("tamilName");
 
@@ -239,7 +247,7 @@ export default function GeneralItemPage() {
     const payload = withOptionalImage(
       {
         ...values,
-        unitOfMeasure: values.isInventoryApplicable && values.unitOfMeasure ? values.unitOfMeasure : null,
+        unitOfMeasure: values.unitOfMeasure || null,
         categoryDetails: values.categoryDetails.map((c) => ({ ...c, subCategory: c.subCategory || null })),
         posAvailability: pos,
         adminBookingVisibility: adminBooking,
@@ -561,7 +569,6 @@ export default function GeneralItemPage() {
                 />
               )}
             />
-            {isInventoryApplicable && (
               <>
                 <Controller
                   control={control}
@@ -576,33 +583,34 @@ export default function GeneralItemPage() {
                     />
                   )}
                 />
-                <DivineInput
-                  staticLabel
-                  label="Threshold"
-                  type="number"
-                  error={errors.threshold?.message}
-                  {...register("threshold", { valueAsNumber: true })}
-                />
+                {isInventoryApplicable && (
+                  <DivineInput
+                    staticLabel
+                    label="Threshold"
+                    type="number"
+                    error={errors.threshold?.message}
+                    {...register("threshold", { valueAsNumber: true })}
+                  />
+                )}
               </>
-            )}
           </div>
 
-          {isInventoryApplicable && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <DivineInput
-                staticLabel
-                label="Min Quantity"
-                type="number"
-                error={errors.minQuantity?.message}
-                {...register("minQuantity", { valueAsNumber: true })}
-              />
-              <DivineInput
-                staticLabel
-                label="Max Quantity"
-                type="number"
-                error={errors.maxQuantity?.message}
-                {...register("maxQuantity", { valueAsNumber: true })}
-              />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <DivineInput
+              staticLabel
+              label="Min Quantity"
+              type="number"
+              error={errors.minQuantity?.message}
+              {...register("minQuantity", { valueAsNumber: true })}
+            />
+            <DivineInput
+              staticLabel
+              label="Max Quantity"
+              type="number"
+              error={errors.maxQuantity?.message}
+              {...register("maxQuantity", { valueAsNumber: true })}
+            />
+            {isInventoryApplicable && (
               <DivineInput
                 staticLabel
                 label="Quantity Reduction"
@@ -610,8 +618,8 @@ export default function GeneralItemPage() {
                 error={errors.quantityReduction?.message}
                 {...register("quantityReduction", { valueAsNumber: true })}
               />
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Controller

@@ -233,6 +233,14 @@ export default function ItemPage() {
 
   const { fields, append, remove: removeRow } = useFieldArray({ control, name: "categoryDetails" });
   const isInventoryApplicable = watch("isInventoryApplicable");
+
+  // Threshold and Quantity Reduction only apply with inventory, so put them
+  // back to their defaults while hidden instead of saving stale values.
+  useEffect(() => {
+    if (isInventoryApplicable) return;
+    setValue("threshold", 0);
+    setValue("quantityReduction", 1);
+  }, [isInventoryApplicable, setValue]);
   const isDeityMappingRequired = watch("isDeityMappingRequired");
   const isFamilyMembersRequired = watch("isFamilyMembersRequired");
   const nameValue = watch("name");
@@ -291,7 +299,7 @@ export default function ItemPage() {
         ...values,
         deityMapping: values.isDeityMappingRequired ? values.deityMapping : [],
         printingGroup: values.isDeityMappingRequired ? null : values.printingGroup,
-        unitOfMeasure: values.isInventoryApplicable && values.unitOfMeasure ? values.unitOfMeasure : null,
+        unitOfMeasure: values.unitOfMeasure || null,
         futureBookingCutOffDate: values.futureBookingCutOffDate || null,
         categoryDetails: values.categoryDetails.map((c) => ({ ...c, subCategory: c.subCategory || null })),
         posAvailability: pos,
@@ -669,7 +677,6 @@ export default function ItemPage() {
                 />
               )}
             />
-            {isInventoryApplicable && (
               <>
                 <Controller
                   control={control}
@@ -684,33 +691,34 @@ export default function ItemPage() {
                     />
                   )}
                 />
-                <DivineInput
-                  staticLabel
-                  label="Threshold"
-                  type="number"
-                  error={errors.threshold?.message}
-                  {...register("threshold", { valueAsNumber: true })}
-                />
+                {isInventoryApplicable && (
+                  <DivineInput
+                    staticLabel
+                    label="Threshold"
+                    type="number"
+                    error={errors.threshold?.message}
+                    {...register("threshold", { valueAsNumber: true })}
+                  />
+                )}
               </>
-            )}
           </div>
 
-          {isInventoryApplicable && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <DivineInput
-                staticLabel
-                label="Min Quantity"
-                type="number"
-                error={errors.minQuantity?.message}
-                {...register("minQuantity", { valueAsNumber: true })}
-              />
-              <DivineInput
-                staticLabel
-                label="Max Quantity"
-                type="number"
-                error={errors.maxQuantity?.message}
-                {...register("maxQuantity", { valueAsNumber: true })}
-              />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <DivineInput
+              staticLabel
+              label="Min Quantity"
+              type="number"
+              error={errors.minQuantity?.message}
+              {...register("minQuantity", { valueAsNumber: true })}
+            />
+            <DivineInput
+              staticLabel
+              label="Max Quantity"
+              type="number"
+              error={errors.maxQuantity?.message}
+              {...register("maxQuantity", { valueAsNumber: true })}
+            />
+            {isInventoryApplicable && (
               <DivineInput
                 staticLabel
                 label="Quantity Reduction"
@@ -718,8 +726,8 @@ export default function ItemPage() {
                 error={errors.quantityReduction?.message}
                 {...register("quantityReduction", { valueAsNumber: true })}
               />
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Controller
