@@ -33,6 +33,8 @@ import { usePageSize } from "../../lib/usePageSize";
 
 type Ref = { _id: string; name: string };
 
+export type DateType = "SINGLE" | "MULTIPLE" | "RANGE";
+
 export type Event = {
   _id: string;
   code: string;
@@ -42,8 +44,13 @@ export type Event = {
   category: Ref | null;
   subCategory: Ref | null;
   deityMapping: Ref[];
+  dateType?: DateType;
+  eventDates?: string[];
   startDate: string;
   endDate: string;
+  isFamilyMembersRequired?: boolean;
+  maxFamilyMembers?: number;
+  termsAndConditions?: string;
   isSlotRequired: boolean;
   slotDetails: {
     slotName: string;
@@ -51,6 +58,7 @@ export type Event = {
     startTime: string;
     endTime: string;
     totalSeats: number;
+    bookedSeats?: number;
     status: number;
   }[];
   salePrice: number;
@@ -70,6 +78,12 @@ const GST_CLASSIFICATION_OPTIONS = [
   { value: "OUT_OF_SCOPE", label: "Out of Scope" },
 ];
 
+const DATE_TYPE_OPTIONS = [
+  { value: "SINGLE", label: "Single date" },
+  { value: "MULTIPLE", label: "Multiple dates" },
+  { value: "RANGE", label: "Date range" },
+];
+
 const SLOT_STATUS_OPTIONS = [
   { value: "1", label: "Active" },
   { value: "0", label: "Inactive" },
@@ -81,8 +95,24 @@ const slotDetailSchema = z.object({
   startTime: z.string().min(1, "Required"),
   endTime: z.string().min(1, "Required"),
   totalSeats: z.number().int().min(0),
+  bookedSeats: z.number().int().min(0),
   status: z.number(),
 });
+
+/**
+ * startDate/endDate are what the rest of the system reads, so whatever the
+ * date type, they end up as the first and last day of the event: a single
+ * date is both, multiple dates take the earliest and latest picked, and a
+ * range is the two ends as entered.
+ */
+function effectiveRange(d: { dateType: DateType; eventDates: string[]; startDate: string; endDate: string }) {
+  if (d.dateType === "SINGLE") return { start: d.startDate, end: d.startDate };
+  if (d.dateType === "MULTIPLE") {
+    const sorted = [...d.eventDates].sort();
+    return { start: sorted[0] ?? "", end: sorted[sorted.length - 1] ?? "" };
+  }
+  return { start: d.startDate, end: d.endDate };
+}
 
 const schema = z
   .object({
@@ -93,8 +123,13 @@ const schema = z
     category: z.string().min(1, "Category is required"),
     subCategory: z.string(),
     deityMapping: z.array(z.string()),
-    startDate: z.string().min(1, "Start date is required"),
-    endDate: z.string().min(1, "End date is required"),
+    dateType: z.enum(["SINGLE", "MULTIPLE", "RANGE"]),
+    eventDates: z.array(z.string()),
+    startDate: z.string(),
+    endDate: z.string(),
+    isFamilyMembersRequired: z.boolean(),
+    maxFamilyMembers: z.number().int().min(1, "Must be at least 1"),
+    termsAndConditions: z.string().trim().max(5000),
     isSlotRequired: z.boolean(),
     slotDetails: z.array(slotDetailSchema),
     salePrice: z.number().min(0, "Must be 0 or more"),
@@ -104,20 +139,34 @@ const schema = z
     publicVisibility: z.boolean(),
     status: z.number(),
   })
-  .refine((data) => !data.startDate || !data.endDate || data.endDate >= data.startDate, {
-    message: "End date cannot be before the start date",
-    path: ["endDate"],
-  })
-  .refine((data) => !data.isSlotRequired || data.slotDetails.length > 0, {
-    message: "Add at least one slot",
-    path: ["slotDetails"],
-  })
-  .refine(
-    (data) =>
-      !data.isSlotRequired ||
-      data.slotDetails.every((s) => (!s.date || !data.startDate || s.date >= data.startDate) && (!s.date || !data.endDate || s.date <= data.endDate)),
-    { message: "Every slot date must fall between the start and end date", path: ["slotDetails"] }
-  );
+  .superRefine((data, ctx) => {
+    const { start, end } = effectiveRange(data);
+    if (data.dateType === "MULTIPLE") {
+      if (data.eventDates.length === 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Select at least one date", path: ["eventDates"] });
+      }
+    } else if (data.dateType === "SINGLE") {
+      if (!data.startDate) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Date is required", path: ["startDate"] });
+    } else {
+      if (!data.startDate) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Start date is required", path: ["startDate"] });
+      else if (!data.endDate) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "End date is required", path: ["endDate"] });
+      else if (data.endDate < data.startDate) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "End date cannot be before the start date", path: ["endDate"] });
+      }
+    }
+
+    if (data.isSlotRequired) {
+      if (data.slotDetails.length === 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Add at least one slot", path: ["slotDetails"] });
+      } else if (data.slotDetails.some((s) => s.date && ((start && s.date < start) || (end && s.date > end)))) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Every slot date must fall between the first and last event date",
+          path: ["slotDetails"],
+        });
+      }
+    }
+  });
 
 type FormValues = z.infer<typeof schema>;
 
@@ -129,8 +178,13 @@ const DEFAULT_VALUES: FormValues = {
   category: "",
   subCategory: "",
   deityMapping: [],
+  dateType: "RANGE",
+  eventDates: [],
   startDate: "",
   endDate: "",
+  isFamilyMembersRequired: false,
+  maxFamilyMembers: 2,
+  termsAndConditions: "",
   isSlotRequired: false,
   slotDetails: [],
   salePrice: 0,
@@ -197,8 +251,15 @@ export default function EventPage() {
 
   const { fields: slotFields, append: appendSlot, remove: removeSlot } = useFieldArray({ control, name: "slotDetails" });
   const isSlotRequired = watch("isSlotRequired");
-  const startDate = watch("startDate");
-  const endDate = watch("endDate");
+  const dateType = watch("dateType");
+  const eventDates = watch("eventDates");
+  const isFamilyMembersRequired = watch("isFamilyMembersRequired");
+  const { start: startDate, end: endDate } = effectiveRange({
+    dateType,
+    eventDates: eventDates ?? [],
+    startDate: watch("startDate"),
+    endDate: watch("endDate"),
+  });
   const nameValue = watch("name") ?? "";
   const tamilNameValue = watch("tamilName") ?? "";
 
@@ -223,8 +284,13 @@ export default function EventPage() {
       category: event.category?._id ?? "",
       subCategory: event.subCategory?._id ?? "",
       deityMapping: event.deityMapping.map((d) => d._id),
+      dateType: event.dateType ?? "RANGE",
+      eventDates: (event.eventDates ?? []).map((d) => d.slice(0, 10)),
       startDate: event.startDate.slice(0, 10),
       endDate: event.endDate.slice(0, 10),
+      isFamilyMembersRequired: event.isFamilyMembersRequired ?? false,
+      maxFamilyMembers: event.maxFamilyMembers ?? 2,
+      termsAndConditions: event.termsAndConditions ?? "",
       isSlotRequired: event.isSlotRequired,
       slotDetails: event.slotDetails.map((s) => ({
         slotName: s.slotName,
@@ -232,6 +298,7 @@ export default function EventPage() {
         startTime: s.startTime,
         endTime: s.endTime,
         totalSeats: s.totalSeats,
+        bookedSeats: s.bookedSeats ?? 0,
         status: s.status,
       })),
       salePrice: event.salePrice,
@@ -254,6 +321,10 @@ export default function EventPage() {
       {
         ...values,
         subCategory: values.subCategory || null,
+        startDate: effectiveRange(values).start,
+        endDate: effectiveRange(values).end,
+        eventDates: values.dateType === "MULTIPLE" ? [...values.eventDates].sort() : values.dateType === "SINGLE" ? [values.startDate] : [],
+        maxFamilyMembers: values.isFamilyMembersRequired ? values.maxFamilyMembers : 2,
         slotDetails: values.isSlotRequired ? values.slotDetails : [],
       },
       [
@@ -410,6 +481,15 @@ export default function EventPage() {
 
           <DivineTextarea staticLabel label="Description" error={errors.description?.message} {...register("description")} />
 
+          <DivineTextarea
+            staticLabel
+            label="Terms & Conditions"
+            rows={6}
+            placeholder="Enter the terms & conditions for this event..."
+            error={errors.termsAndConditions?.message}
+            {...register("termsAndConditions")}
+          />
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Controller
               control={control}
@@ -456,35 +536,134 @@ export default function EventPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Controller
               control={control}
-              name="startDate"
+              name="dateType"
               render={({ field }) => (
-                <DivineDatePicker staticLabel
-                  label="Start Date"
+                <DivineListbox
+                  label="Date Type"
                   value={field.value}
-                  onChange={field.onChange}
-                  maxDate={parseISODateString(endDate)}
-                  error={errors.startDate?.message}
+                  onChange={(v) => {
+                    if (!v) return;
+                    field.onChange(v);
+                    // Each type has its own dates; clear them so a stale pick
+                    // from another type cannot be saved.
+                    setValue("startDate", "");
+                    setValue("endDate", "");
+                    setValue("eventDates", []);
+                  }}
+                  options={DATE_TYPE_OPTIONS}
+                  clearable={false}
                 />
               )}
             />
-            <Controller
-              control={control}
-              name="endDate"
-              render={({ field }) => (
-                <DivineDatePicker staticLabel
-                  label="End Date"
-                  value={field.value}
-                  onChange={field.onChange}
-                  minDate={parseISODateString(startDate)}
-                  error={errors.endDate?.message}
-                />
-              )}
-            />
+            {dateType === "SINGLE" && (
+              <Controller
+                control={control}
+                name="startDate"
+                render={({ field }) => (
+                  <DivineDatePicker staticLabel
+                    label="Event Date"
+                    value={field.value}
+                    onChange={field.onChange}
+                    error={errors.startDate?.message}
+                  />
+                )}
+              />
+            )}
+            {dateType === "MULTIPLE" && (
+              <Controller
+                control={control}
+                name="eventDates"
+                render={({ field }) => (
+                  <div>
+                    <DivineDatePicker staticLabel
+                      mode="multiple"
+                      label="Event Dates"
+                      values={field.value}
+                      onChangeValues={field.onChange}
+                      placeholder="Select one or more dates"
+                      error={errors.eventDates?.message}
+                    />
+                    {field.value.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {field.value.map((d) => (
+                          <span
+                            key={d}
+                            className="inline-flex items-center gap-1 rounded-md border border-maroon/25 bg-maroon/5 px-2 py-0.5 text-[12px] font-medium tabular-nums text-maroon"
+                          >
+                            {formatTempleDate(parseISODateString(d) ?? new Date(d))}
+                            <button
+                              type="button"
+                              aria-label={`Remove ${d}`}
+                              onClick={() => field.onChange(field.value.filter((v: string) => v !== d))}
+                              className="text-maroon/60 hover:text-crimson-500"
+                            >
+                              <CloseIcon className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              />
+            )}
+            {dateType === "RANGE" && (
+              <Controller
+                control={control}
+                name="startDate"
+                render={({ field: startField }) => (
+                  <Controller
+                    control={control}
+                    name="endDate"
+                    render={({ field: endField }) => (
+                      <DivineDatePicker staticLabel
+                        mode="range"
+                        label="Event Date Range"
+                        rangeValue={{ start: startField.value, end: endField.value }}
+                        onChangeRange={(start, end) => {
+                          startField.onChange(start);
+                          endField.onChange(end);
+                        }}
+                        placeholder="Select from date - to date"
+                        error={errors.startDate?.message || errors.endDate?.message}
+                      />
+                    )}
+                  />
+                )}
+              />
+            )}
             <Controller
               control={control}
               name="isSlotRequired"
               render={({ field }) => <DivineRadioGroup boxed label="Slot Required" value={field.value} onChange={field.onChange} />}
             />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Controller
+              control={control}
+              name="isFamilyMembersRequired"
+              render={({ field }) => (
+                <DivineRadioGroup
+                  boxed
+                  label="Family Members Required"
+                  value={field.value}
+                  onChange={(v) => {
+                    field.onChange(v);
+                    if (v) setValue("maxFamilyMembers", 2);
+                  }}
+                />
+              )}
+            />
+            {isFamilyMembersRequired && (
+              <DivineInput
+                staticLabel
+                label="Max Family Members"
+                type="number"
+                error={errors.maxFamilyMembers?.message}
+                {...register("maxFamilyMembers", { valueAsNumber: true })}
+              />
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -571,7 +750,7 @@ export default function EventPage() {
                 <button
                   type="button"
                   onClick={() =>
-                    appendSlot({ slotName: "", date: "", startTime: "", endTime: "", totalSeats: 0, status: 1 })
+                    appendSlot({ slotName: "", date: "", startTime: "", endTime: "", totalSeats: 0, bookedSeats: 0, status: 1 })
                   }
                   className="flex shrink-0 items-center gap-1.5 rounded-lg border border-orange-300 bg-white px-2.5 py-1.5 text-[12px] font-medium text-orange-600 transition-colors hover:bg-orange-50"
                 >
@@ -581,12 +760,13 @@ export default function EventPage() {
 
               <div className="overflow-x-auto">
               {slotFields.length > 0 && (
-                <div className="hidden min-w-[56rem] grid-cols-[minmax(10rem,1.4fr)_10.5rem_8rem_8rem_7rem_11rem_2.75rem] gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-[11px] uppercase tracking-wide text-gray-500 lg:grid">
+                <div className="hidden min-w-[72rem] grid-cols-[minmax(10rem,1.4fr)_10.5rem_11rem_11rem_7rem_6rem_9rem_2.75rem] gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-[11px] uppercase tracking-wide text-gray-500 lg:grid">
                   <span>Slot Name</span>
                   <span>Slot Date</span>
                   <span>Start Time</span>
                   <span>End Time</span>
                   <span>No. of Seats</span>
+                  <span>Booked</span>
                   <span>Status</span>
                   <span />
                 </div>
@@ -597,35 +777,42 @@ export default function EventPage() {
                 {slotFields.map((row, index) => (
                   <div
                     key={row.id}
-                    className="grid min-w-0 grid-cols-1 items-start gap-2 px-4 py-3 sm:grid-cols-2 lg:min-w-[56rem] lg:grid-cols-[minmax(10rem,1.4fr)_10.5rem_8rem_8rem_7rem_11rem_2.75rem]"
+                    className="grid min-w-0 grid-cols-1 items-start gap-2 px-4 py-3 sm:grid-cols-2 lg:min-w-[72rem] lg:grid-cols-[minmax(10rem,1.4fr)_10.5rem_11rem_11rem_7rem_6rem_9rem_2.75rem]"
                   >
                     <input
                       placeholder="Slot Name"
                       {...register(`slotDetails.${index}.slotName`)}
-                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[13.5px] text-ink-100 outline-none focus:border-gold-400/60 sm:col-span-2 lg:col-span-1"
+                      className="h-10 w-full rounded-lg border border-[#f0b4a0] bg-white px-3 text-[13.5px] text-ink-100 outline-none transition-colors hover:border-[#e8a090] focus:border-[#e8590c] sm:col-span-2 lg:col-span-1"
                     />
                     <input
                       type="date"
                       min={startDate || undefined}
                       max={endDate || undefined}
                       {...register(`slotDetails.${index}.date`)}
-                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[13.5px] text-ink-100 outline-none focus:border-gold-400/60"
+                      className="h-10 w-full rounded-lg border border-[#f0b4a0] bg-white px-3 text-[13.5px] text-ink-100 outline-none transition-colors hover:border-[#e8a090] focus:border-[#e8590c]"
                     />
                     <Controller
                       control={control}
                       name={`slotDetails.${index}.startTime`}
-                      render={({ field }) => <DivineTimePicker label="Start Time" value={field.value} onChange={field.onChange} />}
+                      render={({ field }) => <DivineTimePicker label="Start Time" compact value={field.value} onChange={field.onChange} />}
                     />
                     <Controller
                       control={control}
                       name={`slotDetails.${index}.endTime`}
-                      render={({ field }) => <DivineTimePicker label="End Time" value={field.value} onChange={field.onChange} />}
+                      render={({ field }) => <DivineTimePicker label="End Time" compact value={field.value} onChange={field.onChange} />}
                     />
                     <input
                       type="number"
                       {...register(`slotDetails.${index}.totalSeats`, { valueAsNumber: true })}
-                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-[13.5px] text-ink-100 outline-none focus:border-gold-400/60"
+                      className="h-10 w-full rounded-lg border border-[#f0b4a0] bg-white px-3 text-[13.5px] text-ink-100 outline-none transition-colors hover:border-[#e8a090] focus:border-[#e8590c]"
                     />
+                    <div
+                      title="Seats already booked for this slot"
+                      className="flex h-10 items-center rounded-lg border border-[#f0b4a0] bg-gray-50 px-3 text-[13.5px] tabular-nums text-ink-100"
+                    >
+                      {watch(`slotDetails.${index}.bookedSeats`) ?? 0}
+                      <span className="ml-1 text-ink-500">/ {watch(`slotDetails.${index}.totalSeats`) || 0}</span>
+                    </div>
                     <Controller
                       control={control}
                       name={`slotDetails.${index}.status`}
@@ -634,6 +821,7 @@ export default function EventPage() {
                           value={String(field.value)}
                           onChange={(v) => field.onChange(Number(v))}
                           options={SLOT_STATUS_OPTIONS}
+                          formChrome
                           clearable={false}
                         />
                       )}

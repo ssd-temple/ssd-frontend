@@ -18,6 +18,10 @@ type DivineTimePickerProps = {
   containerClassName?: string;
   /** Same convention as DivineDatePicker's staticLabel — an admin master-form field. */
   staticLabel?: boolean;
+  /** Admin form-field look (same height and border as staticLabel) with the
+   *  label kept for screen readers only - for table rows whose column header
+   *  already names the field. */
+  compact?: boolean;
 };
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 1); // 1–12
@@ -46,7 +50,9 @@ export default function DivineTimePicker({
   placeholder = "Select a time",
   containerClassName = "",
   staticLabel = false,
+  compact = false,
 }: DivineTimePickerProps) {
+  const chrome = staticLabel || compact;
   const parsed = parseHHMM(value);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
@@ -122,10 +128,10 @@ export default function DivineTimePicker({
     onChange(toHHMM(hour24 % 12 || 12, now.getMinutes(), hour24 >= 12 ? "PM" : "AM"));
   }
 
-  const outerWrapClass = staticLabel
+  const outerWrapClass = chrome
     ? `${FORM_CONTROL_SHELL} ${error ? FORM_CONTROL_ERROR : open ? FORM_CONTROL_FOCUS : ""}`
     : "";
-  const triggerClass = staticLabel
+  const triggerClass = chrome
     ? "group relative w-full rounded-lg bg-white text-left leading-none"
     : `group relative w-full rounded-xl border bg-white text-left transition-colors duration-300 ${
         error
@@ -139,8 +145,8 @@ export default function DivineTimePicker({
 
   return (
     <div className="w-full">
-      {staticLabel && (
-        <label id={labelId} className={FORM_LABEL}>
+      {chrome && (
+        <label id={labelId} className={staticLabel ? FORM_LABEL : "sr-only"}>
           {label}
         </label>
       )}
@@ -154,14 +160,14 @@ export default function DivineTimePicker({
           aria-labelledby={labelId}
           className={`${triggerClass} ${containerClassName}`}
         >
-          <div className={`flex items-center gap-2 ${staticLabel ? "h-10 px-3" : "px-4 pt-5 pb-2"}`}>
-            {!staticLabel && (
+          <div className={`flex items-center gap-2 ${chrome ? "h-10 px-3" : "px-4 pt-5 pb-2"}`}>
+            {!chrome && (
               <span className={`shrink-0 transition-colors ${open ? "text-amber-600" : "text-ink-500"}`}>
                 <ClockIcon />
               </span>
             )}
             <div className="relative min-w-0 w-full">
-              {!staticLabel && (
+              {!chrome && (
                 <span
                   id={labelId}
                   className="pointer-events-none absolute -top-[18px] left-0 right-0 truncate text-[11px] tracking-wide text-gray-700"
@@ -170,8 +176,8 @@ export default function DivineTimePicker({
                 </span>
               )}
               <span
-                className={`block truncate font-body tabular-nums ${staticLabel ? "text-[14px] leading-5" : "text-[15px]"} ${
-                  display ? "text-ink-100" : staticLabel ? FORM_MUTED : "text-ink-500"
+                className={`block truncate font-body tabular-nums ${chrome ? "text-[14px] leading-5" : "text-[15px]"} ${
+                  display ? "text-ink-100" : chrome ? FORM_MUTED : "text-ink-500"
                 }`}
               >
                 {display || placeholder}
@@ -193,7 +199,7 @@ export default function DivineTimePicker({
                 </svg>
               </span>
             )}
-            {staticLabel && (
+            {chrome && (
               <span className={`shrink-0 ${open ? "text-[#e8590c]" : "text-gray-400"}`}>
                 <ClockIcon />
               </span>

@@ -16,8 +16,8 @@ import {
 type DivineDatePickerProps = {
   label: string;
   /** ISO date string, "YYYY-MM-DD", or "" for empty. */
-  value: string;
-  onChange: (value: string) => void;
+  value?: string;
+  onChange?: (value: string) => void;
   error?: string;
   hint?: string;
   /** Blocks selection before this date — pass startOfToday() for "future only". */
@@ -34,6 +34,14 @@ type DivineDatePickerProps = {
    *  DivineListbox always shows. Off by default so POS keeps its plain
    *  gray/gold-focus border. */
   staticLabel?: boolean;
+  /** "single" (default) uses `value`/`onChange`. "multiple" uses `values`/`onChangeValues`
+   *  and keeps the calendar open so several days can be ticked. "range" uses
+   *  `rangeValue`/`onChangeRange` — first click is the start, second the end. */
+  mode?: "single" | "multiple" | "range";
+  values?: string[];
+  onChangeValues?: (values: string[]) => void;
+  rangeValue?: { start: string; end: string };
+  onChangeRange?: (start: string, end: string) => void;
 };
 
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -72,7 +80,7 @@ function buildMonthGrid(year: number, month: number): Cell[] {
  */
 export default function DivineDatePicker({
   label,
-  value,
+  value = "",
   onChange,
   error,
   hint,
@@ -81,8 +89,23 @@ export default function DivineDatePicker({
   placeholder = "Select a date",
   containerClassName = "",
   staticLabel = false,
+  mode = "single",
+  values = [],
+  onChangeValues,
+  rangeValue,
+  onChangeRange,
 }: DivineDatePickerProps) {
-  const selected = parseISODateString(value);
+  const rangeFrom = mode === "range" ? parseISODateString(rangeValue?.start ?? "") : null;
+  const rangeTo = mode === "range" ? parseISODateString(rangeValue?.end ?? "") : null;
+  const multiDates =
+    mode === "multiple"
+      ? values.map((v) => parseISODateString(v)).filter((d): d is Date => Boolean(d))
+      : [];
+  const single = mode === "single" ? parseISODateString(value) : null;
+  // Everything currently chosen, whatever the mode — what the calendar
+  // highlights, and where it opens to.
+  const selectedDates = mode === "multiple" ? multiDates : mode === "range" ? [rangeFrom, rangeTo].filter((d): d is Date => Boolean(d)) : single ? [single] : [];
+  const selected = selectedDates[0] ?? null;
   const today = startOfToday();
 
   const [open, setOpen] = useState(false);
@@ -152,9 +175,45 @@ export default function DivineDatePicker({
   }
 
   function pick(date: Date) {
-    onChange(toISODateString(date));
+    const iso = toISODateString(date);
+    if (mode === "multiple") {
+      const next = values.includes(iso) ? values.filter((v) => v !== iso) : [...values, iso];
+      onChangeValues?.(next.sort());
+      return;
+    }
+    if (mode === "range") {
+      const startIso = rangeValue?.start ?? "";
+      const endIso = rangeValue?.end ?? "";
+      if (!startIso || endIso) {
+        onChangeRange?.(iso, "");
+        return;
+      }
+      if (iso < startIso) onChangeRange?.(iso, startIso);
+      else onChangeRange?.(startIso, iso);
+      setOpen(false);
+      return;
+    }
+    onChange?.(iso);
     setOpen(false);
   }
+
+  function clearAll() {
+    if (mode === "multiple") onChangeValues?.([]);
+    else if (mode === "range") onChangeRange?.("", "");
+    else onChange?.("");
+  }
+
+  const hasValue = selectedDates.length > 0;
+  const displayText =
+    mode === "multiple"
+      ? multiDates.map((d) => formatTempleDate(d)).join(", ")
+      : mode === "range"
+        ? rangeFrom
+          ? `${formatTempleDate(rangeFrom)} – ${rangeTo ? formatTempleDate(rangeTo) : "select end date"}`
+          : ""
+        : single
+          ? formatTempleDate(single)
+          : "";
 
   const isDisabled = (date: Date) => Boolean((minDate && date < minDate) || (maxDate && date > maxDate));
   const cells = buildMonthGrid(view.getFullYear(), view.getMonth());
@@ -236,18 +295,18 @@ export default function DivineDatePicker({
                 {label}
               </span>
             )}
-            <span className={`block truncate font-body ${staticLabel ? "text-[14px] leading-5" : "text-[15px]"} ${selected ? "text-ink-100" : staticLabel ? FORM_MUTED : "text-ink-500"}`}>
-              {selected ? formatTempleDate(selected) : placeholder}
+            <span className={`block truncate font-body ${staticLabel ? "text-[14px] leading-5" : "text-[15px]"} ${hasValue ? "text-ink-100" : staticLabel ? FORM_MUTED : "text-ink-500"}`}>
+              {hasValue ? displayText : placeholder}
             </span>
           </div>
-          {selected && (
+          {hasValue && (
             <span
               role="button"
               tabIndex={-1}
               aria-label="Clear date"
               onClick={(e) => {
                 e.stopPropagation();
-                onChange("");
+                clearAll();
               }}
               className="shrink-0 rounded p-0.5 text-gray-400 transition-colors hover:text-crimson-500"
             >
@@ -392,7 +451,8 @@ export default function DivineDatePicker({
                         >
                           {cells.map(({ date, outside }) => {
                             const disabled = isDisabled(date);
-                            const isSelected = isSameDay(date, selected);
+                            const isSelected = selectedDates.some((d) => isSameDay(date, d));
+                            const inRange = Boolean(rangeFrom && rangeTo && date > rangeFrom && date < rangeTo);
                             const isToday = isSameDay(date, today);
 
                             return (
@@ -404,6 +464,8 @@ export default function DivineDatePicker({
                                 className={`relative h-8 rounded-lg text-[12.5px] tabular-nums transition-colors ${
                                   isSelected
                                     ? "bg-maroon font-semibold text-white shadow-[0_2px_10px_-2px_rgba(124,21,39,0.55)]"
+                                    : inRange
+                                      ? "bg-maroon/15 text-maroon"
                                     : disabled
                                       ? "cursor-not-allowed text-ink-500/25"
                                       : outside
@@ -428,21 +490,31 @@ export default function DivineDatePicker({
                   <button
                     type="button"
                     onClick={() => {
-                      onChange("");
-                      setOpen(false);
+                      clearAll();
+                      if (mode === "single") setOpen(false);
                     }}
                     className="rounded-lg px-2 py-1 text-[12px] text-ink-500 transition-colors hover:text-crimson-500"
                   >
                     Clear
                   </button>
-                  <button
-                    type="button"
-                    disabled={isDisabled(today)}
-                    onClick={() => pick(today)}
-                    className="rounded-lg px-2 py-1 text-[12px] font-medium text-maroon transition-colors hover:text-maroon-hover disabled:opacity-40"
-                  >
-                    Today
-                  </button>
+                  {mode === "single" ? (
+                    <button
+                      type="button"
+                      disabled={isDisabled(today)}
+                      onClick={() => pick(today)}
+                      className="rounded-lg px-2 py-1 text-[12px] font-medium text-maroon transition-colors hover:text-maroon-hover disabled:opacity-40"
+                    >
+                      Today
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setOpen(false)}
+                      className="rounded-lg px-2 py-1 text-[12px] font-semibold text-maroon transition-colors hover:text-maroon-hover"
+                    >
+                      Done
+                    </button>
+                  )}
                 </div>
               </motion.div>
             </>

@@ -634,7 +634,9 @@ export default function PosPortalPage() {
   // category tab, isn't keyed off any categoryId. Its own flat item+service
   // list (favoriteItems/favoriteServices below) cuts across every category,
   // so it's tracked independently rather than folded into selectedCategoryId.
-  const [showingFavorites, setShowingFavorites] = useState(false);
+  // Starts on Favorites; the first load below falls back to All Categories
+  // if there are none, so the cashier never lands on an empty tab.
+  const [showingFavorites, setShowingFavorites] = useState(true);
   const [favoriteItems, setFavoriteItems] = useState<PosItem[]>([]);
   const [favoriteServices, setFavoriteServices] = useState<PosService[]>([]);
   const [favoritesLoading, setFavoritesLoading] = useState(false);
@@ -709,6 +711,7 @@ export default function PosPortalPage() {
       ]);
       setFavoriteItems(unwrap(itemsRes).items);
       setFavoriteServices(unwrap(servicesRes).items);
+      return unwrap(itemsRes).items.length + unwrap(servicesRes).items.length;
     } catch (err) {
       toast.error(extractErrorMessage(err));
     } finally {
@@ -717,7 +720,9 @@ export default function PosPortalPage() {
   }
 
   useEffect(() => {
-    loadFavorites();
+    loadFavorites().then((count) => {
+      if (!count) setShowingFavorites(false);
+    });
   }, []);
 
   useEffect(() => {
@@ -1997,7 +2002,7 @@ export default function PosPortalPage() {
     setActiveFolder(null);
     setOfferingSearch("");
     setSelectedCategoryId("");
-    setShowingFavorites(false);
+    setShowingFavorites(favoriteCount > 0);
     setStep("cart");
     setConfirmation(null);
     setPaymentAmountInput("");
