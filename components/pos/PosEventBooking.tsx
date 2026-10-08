@@ -19,6 +19,8 @@ export type EventSelection = {
   devotees: Devotee[];
 };
 
+type SummaryRow = { icon: React.ReactNode; k: string; v: React.ReactNode };
+
 type StepKey = "slot" | "deity" | "family" | "terms" | "payment";
 
 const iso = (v: string) => v.slice(0, 10);
@@ -577,7 +579,7 @@ export default function PosEventBooking({
               <p className="border-b border-[#e8d2a6]/60 bg-[#fbf3e4] px-3.5 py-2 text-[11px] font-bold uppercase tracking-[0.12em] text-[#7c1527]">
                 Booking summary
               </p>
-              {[
+              {([
                 { icon: <CalendarIcon className="h-4 w-4" />, k: "Event", v: <><b>{event.name}</b> <span className="text-[#b8860b]">{event.tamilName}</span></> },
                 event.isSlotRequired && chosenSlot
                   ? {
@@ -625,8 +627,8 @@ export default function PosEventBooking({
                 event.termsAndConditions?.trim()
                   ? { icon: <CheckIcon className="h-4 w-4" />, k: "Terms", v: <span className="text-emerald-700">Accepted</span> }
                   : null,
-              ]
-                .filter((r): r is { icon: React.ReactNode; k: string; v: React.ReactNode } => r !== null)
+              ] as (SummaryRow | null)[])
+                .filter((r): r is SummaryRow => r !== null)
                 .map((row, i) => (
                   <motion.div
                     key={row.k}
