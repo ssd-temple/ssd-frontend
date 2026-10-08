@@ -360,8 +360,15 @@ export default function AdminBookingPage() {
   const [nakshatraOptions, setNakshatraOptions] = useState<ListboxOption[]>([]);
   useEffect(() => {
     api
-      .get<ApiEnvelope<{ items: { _id: string; name: string }[] }>>("/pos/admin/booking/nakshathirams")
-      .then((r) => setNakshatraOptions(unwrap(r).items.map((n) => ({ value: n.name, label: n.name }))))
+      .get<ApiEnvelope<{ items: { _id: string; name: string; tamilName?: string }[] }>>("/pos/admin/booking/nakshathirams")
+      .then((r) =>
+        setNakshatraOptions(
+          unwrap(r).items.map((n) => ({
+            value: n.name,
+            label: n.tamilName?.trim() ? `${n.name} / ${n.tamilName.trim()}` : n.name,
+          }))
+        )
+      )
       .catch(() => {});
   }, []);
 

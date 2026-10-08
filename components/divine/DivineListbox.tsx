@@ -315,7 +315,7 @@ export default function DivineListbox({
                               : "text-ink-100"
                         }`}
                       >
-                        {renderOption ? renderOption(opt) : <span className="truncate">{opt.label}</span>}
+                        {renderOption ? renderOption(opt) : <span className="min-w-0 whitespace-normal break-words leading-snug">{opt.label}</span>}
                         {isSelected && <CheckIcon className="h-3.5 w-3.5 shrink-0 text-white" />}
                       </li>
                     );

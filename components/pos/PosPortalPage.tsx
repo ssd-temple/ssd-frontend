@@ -914,9 +914,9 @@ export default function PosPortalPage() {
           rows.map((n) => ({
             // Keep English `name` as the stored value so existing bookings
             // and print enrichment (Nakshathiram.name → tamilName) stay in
-            // sync; the cashier only sees Tamil in the list.
+            // sync; the list shows both, as "English / Tamil".
             value: n.name,
-            label: n.tamilName?.trim() || n.name,
+            label: n.tamilName?.trim() ? `${n.name} / ${n.tamilName.trim()}` : n.name,
           })),
         );
         setNakshatraByName(
