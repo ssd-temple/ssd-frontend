@@ -7,6 +7,8 @@
 export function resolveImageUrl(path?: string | null): string | null {
   if (!path) return null;
   if (/^https?:\/\//i.test(path)) return path;
+  // Bundled artwork under /sample-events (e.g. the default event image) is served by the frontend itself.
+  if (path.startsWith("/sample-events/")) return path;
   const base = (process.env.NEXT_PUBLIC_AUTH_API_BASE_URL ?? "http://localhost:5003/api/v1").replace(
     /\/api\/v\d+\/?$/,
     ""

@@ -55,6 +55,7 @@ import {
   isValidSgMobile,
   SG_MOBILE_ERROR,
 } from "../../lib/mobileNumber";
+import PosEventsSection, { type PosEvent } from "./PosEventsSection";
 import DivineInput from "../divine/DivineInput";
 import DivineButton from "../divine/DivineButton";
 import { StayOnPageWarning } from "../divine/StatusBanner";
@@ -84,6 +85,7 @@ import {
   CloseIcon,
   StarIcon,
   BoxIcon,
+  CalendarIcon,
 } from "../divine/icons";
 
 // Shared by every text/select/date field on the counter screen — search
@@ -647,6 +649,11 @@ export default function PosPortalPage() {
   const [showingGeneralItems, setShowingGeneralItems] = useState(false);
   const [generalItems, setGeneralItems] = useState<PosGeneralItem[]>([]);
   const [generalItemsLoading, setGeneralItemsLoading] = useState(false);
+  // Static "Events" tab — sits ahead of Favorites and only exists while the
+  // server returns at least one live or upcoming event (see loadEvents).
+  const [showingEvents, setShowingEvents] = useState(false);
+  const [events, setEvents] = useState<PosEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   // Derived: the full CategoryTab record for the active tab (null = "All Categories")
   const selectedCategory =
@@ -756,6 +763,35 @@ export default function PosPortalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showingGeneralItems]);
 
+  // Fetched up front so the tab (and its count) only appear when there is
+  // something to show, and again whenever the tab is opened so a newly added
+  // or just-finished event is reflected without reloading the terminal.
+  async function loadEvents() {
+    setEventsLoading(true);
+    try {
+      const r = await api.get<ApiEnvelope<{ items: PosEvent[] }>>("/pos/booking/events");
+      const items = unwrap(r).items;
+      setEvents(items);
+      if (items.length === 0) setShowingEvents(false);
+    } catch {
+      // The tab simply stays hidden — events are optional context, not
+      // something worth interrupting a sale with a toast.
+      setEvents([]);
+      setShowingEvents(false);
+    } finally {
+      setEventsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadEvents();
+  }, []);
+
+  useEffect(() => {
+    if (showingEvents) loadEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showingEvents]);
+
   const visibleFolders = useMemo(
     () =>
       selectedCategoryId
@@ -790,6 +826,7 @@ export default function PosPortalPage() {
     offeringSearch,
     showingFavorites,
     showingGeneralItems,
+    showingEvents,
     cataloguePageSize,
   ]);
 
@@ -832,6 +869,7 @@ export default function PosPortalPage() {
     setOfferingSearch("");
     setShowingFavorites(false);
     setShowingGeneralItems(false);
+    setShowingEvents(false);
   }
 
   useEffect(() => {
@@ -2003,6 +2041,7 @@ export default function PosPortalPage() {
     setOfferingSearch("");
     setSelectedCategoryId("");
     setShowingFavorites(favoriteCount > 0);
+    setShowingEvents(false);
     setStep("cart");
     setConfirmation(null);
     setPaymentAmountInput("");
@@ -2148,7 +2187,7 @@ export default function PosPortalPage() {
 
   const showingSearch = offeringSearch.trim().length > 0;
   const showingFolder =
-    !showingSearch && !showingFavorites && !showingGeneralItems && activeFolder;
+    !showingSearch && !showingFavorites && !showingGeneralItems && !showingEvents && activeFolder;
 
   return (
     <PosShell
@@ -2472,12 +2511,36 @@ export default function PosPortalPage() {
               loading={searchLoading}
             />
             <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 py-1.5 [scrollbar-width:thin]">
+              {/* Static "Events" tab — first of all, but only while at least
+                  one event is live or upcoming. Temple maroon-and-saffron so
+                  it reads as the festive highlight, not another category. */}
+              {events.length > 0 && (
+                <button
+                  onClick={() => {
+                    setShowingEvents(true);
+                    setShowingFavorites(false);
+                    setShowingGeneralItems(false);
+                    setSelectedCategoryId("");
+                    setActiveFolder(null);
+                    setOfferingSearch("");
+                  }}
+                  className={`inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-[12.5px] font-semibold shadow-sm transition-[box-shadow,background-color,color,border-color] duration-200 hover:shadow-[0_6px_16px_-4px_rgba(193,68,14,0.45)] sm:h-12 ${
+                    showingEvents
+                      ? "border-[#c1440e] bg-gradient-to-r from-[#7c1527] to-[#c1440e] text-white"
+                      : "border-[#c1440e]/50 bg-white text-[#c1440e] hover:border-[#c1440e] hover:bg-orange-50"
+                  }`}
+                >
+                  <CalendarIcon className="h-4 w-4" />
+                  Events ({events.length})
+                </button>
+              )}
               {/* Static "Favorites" tab — always first, ahead of All
                   Categories, and its own gold theme so it reads as a
                   shortcut rather than just another category. */}
               <button
                 onClick={() => {
                   setShowingFavorites(true);
+                  setShowingEvents(false);
                   setShowingGeneralItems(false);
                   setSelectedCategoryId("");
                   setActiveFolder(null);
@@ -2497,6 +2560,7 @@ export default function PosPortalPage() {
               <button
                 onClick={() => {
                   setShowingGeneralItems(true);
+                  setShowingEvents(false);
                   setShowingFavorites(false);
                   setSelectedCategoryId("");
                   setActiveFolder(null);
@@ -2512,12 +2576,13 @@ export default function PosPortalPage() {
               <button
                 onClick={() => {
                   setShowingFavorites(false);
+                  setShowingEvents(false);
                   setShowingGeneralItems(false);
                   setSelectedCategoryId("");
                   setActiveFolder(null);
                 }}
                 className={`inline-flex h-11 shrink-0 items-center rounded-xl border px-3.5 text-[12.5px] font-medium shadow-sm transition-[box-shadow,background-color,color,border-color] duration-200 hover:shadow-[0_6px_16px_-4px_rgba(124,21,39,0.4)] sm:h-12 ${
-                  !showingFavorites && !showingGeneralItems && !selectedCategoryId ? POS_BTN_ON : POS_BTN_OFF
+                  !showingFavorites && !showingGeneralItems && !showingEvents && !selectedCategoryId ? POS_BTN_ON : POS_BTN_OFF
                 }`}
               >
                 All Categories ({totalOfferingCount})
@@ -2529,12 +2594,13 @@ export default function PosPortalPage() {
                     key={c._id}
                     onClick={() => {
                       setShowingFavorites(false);
+                      setShowingEvents(false);
                       setShowingGeneralItems(false);
                       setSelectedCategoryId(c._id);
                       setActiveFolder(null);
                     }}
                     className={`inline-flex h-11 shrink-0 items-center gap-2.5 rounded-xl border py-1 pl-1.5 pr-3.5 text-[12.5px] font-medium shadow-sm transition-[box-shadow,background-color,color,border-color] duration-200 hover:shadow-[0_6px_16px_-4px_rgba(124,21,39,0.4)] sm:h-12 ${
-                      !showingFavorites && !showingGeneralItems && selectedCategoryId === c._id ? POS_BTN_ON : POS_BTN_OFF
+                      !showingFavorites && !showingGeneralItems && !showingEvents && selectedCategoryId === c._id ? POS_BTN_ON : POS_BTN_OFF
                     }`}
                   >
                     {catImg ? (
@@ -2560,7 +2626,9 @@ export default function PosPortalPage() {
               // own colour (`${color}18`) — Favorites uses its own yellow-gold
               // tone instead of a category colour, at the same strength.
               backgroundColor:
-                !showingSearch && showingFavorites
+                !showingSearch && showingEvents
+                  ? "#c1440e12"
+                  : !showingSearch && showingFavorites
                   ? "#fcd34d18"
                   : !showingSearch && showingGeneralItems
                     ? "#3730A318"
@@ -2595,6 +2663,24 @@ export default function PosPortalPage() {
                   />
                 )}
               </>
+            )}
+
+            {!catalogueLoading && !showingSearch && showingEvents && (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="mb-4 flex shrink-0 items-center gap-2 text-[12.5px]">
+                  <span className="flex items-center gap-1.5 font-accent text-[16px] font-extrabold tracking-tight text-[#c1440e]">
+                    <CalendarIcon className="h-4 w-4" /> Events
+                  </span>
+                  <span className="text-ink-500">— live and upcoming temple events</span>
+                </div>
+                {eventsLoading && events.length === 0 ? (
+                  <div className="flex justify-center py-8">
+                    <EmblemLoader size="sm" label="Loading events…" />
+                  </div>
+                ) : (
+                  <PosEventsSection events={events} nakshatraOptions={nakshatraOptions} />
+                )}
+              </div>
             )}
 
             {!catalogueLoading && !showingSearch && showingFavorites && (
@@ -2655,6 +2741,7 @@ export default function PosPortalPage() {
               !showingSearch &&
               !showingFavorites &&
               !showingGeneralItems &&
+              !showingEvents &&
               showingFolder &&
               activeFolder && (
                 <div className="flex min-h-0 flex-1 flex-col">
@@ -2704,6 +2791,7 @@ export default function PosPortalPage() {
               !showingSearch &&
               !showingFavorites &&
               !showingGeneralItems &&
+              !showingEvents &&
               !showingFolder && (
               <CatalogueGrid
                 descriptors={defaultCatalogueDescriptors}
