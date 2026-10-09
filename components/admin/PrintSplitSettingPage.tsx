@@ -76,7 +76,11 @@ export default function PrintSplitSettingPage() {
         <p className="mt-1 text-[13px] text-ink-500">
           Decides how POS ticket printing splits a booking into physical tickets. Deity Wise prints one ticket per
           deity, regardless of Print Group. Print Group Wise prints one ticket per resolved Print Group, combining
-          deities (or items/services) that share the same group onto a single ticket.
+          deities (or items) that share the same group onto a single ticket.
+        </p>
+        <p className="mt-1.5 text-[13px] text-ink-500">
+          This setting does not apply to Services and Events: every service (or event) on a booking always prints on
+          its own ticket, with its selected deity, even when several share a deity or Print Group.
         </p>
       </div>
 
