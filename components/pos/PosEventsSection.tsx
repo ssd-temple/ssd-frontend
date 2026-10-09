@@ -186,7 +186,7 @@ function EventCard({
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-black/10" />
 
-        <div className="absolute left-0 top-3 z-10">
+        <div className="absolute bottom-1 left-0 z-20">
           <span className="absolute -left-3 top-0 h-full w-6 rounded-l-md bg-gradient-to-b from-[#8a6208] to-[#b8860b]" aria-hidden="true" />
           <span
             className={`relative flex items-center gap-1.5 rounded-r-xl bg-gradient-to-r py-1.5 pl-3.5 pr-3 text-[12px] font-bold tracking-wide text-white ${GOLD_RIBBON[badge.tone]}`}
