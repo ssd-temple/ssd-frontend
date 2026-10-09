@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import type { ListboxOption } from "../divine/DivineListbox";
-import PosEventBooking from "./PosEventBooking";
+import PosEventBooking, { type EventSelection } from "./PosEventBooking";
 import { CalendarIcon, UsersIcon } from "../divine/icons";
 import { formatHHMMDisplay, formatTempleDate, parseISODateString, toISODateString } from "../../lib/datetime";
 import { resolveImageUrl } from "../../lib/imageUrl";
@@ -50,6 +50,11 @@ export function eventImageSrc(event: Pick<PosEvent, "image" | "sliderImage">): s
 export function fallbackToDefaultEventImage(e: { currentTarget: HTMLImageElement }) {
   const img = e.currentTarget;
   if (!img.src.endsWith(DEFAULT_EVENT_IMAGE)) img.src = DEFAULT_EVENT_IMAGE;
+}
+
+/** Slots have no id of their own: name + day + start time identify one (mirrors the server's slotKeyOf). */
+export function slotKeyOf(slot: Pick<PosEventSlot, "slotName" | "date" | "startTime">): string {
+  return `${slot.slotName}|${slot.date.slice(0, 10)}|${slot.startTime}`;
 }
 
 const iso = (value: string) => value.slice(0, 10);
@@ -269,15 +274,46 @@ function EventCard({
 export default function PosEventsSection({
   events,
   nakshatraOptions,
+  onSubmitSelection,
+  editing,
+  onCancelEdit,
 }: {
   events: PosEvent[];
   nakshatraOptions: ListboxOption[];
+  /** Adds a cart line, or - when lineId is set - updates the one being edited. */
+  onSubmitSelection: (event: PosEvent, selection: EventSelection, lineId: string | null) => boolean | Promise<boolean>;
+  /** Set when a cart line's Edit button was pressed: the flow opens on that event, pre-filled. */
+  editing: { event: PosEvent; selection: EventSelection; lineId: string } | null;
+  onCancelEdit: () => void;
 }) {
   const today = toISODateString(new Date());
   const [selected, setSelected] = useState<PosEvent | null>(null);
 
+  if (editing) {
+    return (
+      <PosEventBooking
+        key={editing.lineId}
+        event={editing.event}
+        initial={editing.selection}
+        nakshatraOptions={nakshatraOptions}
+        onBack={onCancelEdit}
+        onSubmit={(selection) => void onSubmitSelection(editing.event, selection, editing.lineId)}
+      />
+    );
+  }
+
   if (selected) {
-    return <PosEventBooking event={selected} nakshatraOptions={nakshatraOptions} onBack={() => setSelected(null)} />;
+    return (
+      <PosEventBooking
+        event={selected}
+        nakshatraOptions={nakshatraOptions}
+        onBack={() => setSelected(null)}
+        onSubmit={async (selection) => {
+          // Stay in the flow if the line could not be added (e.g. no customer could be resolved).
+          if (await onSubmitSelection(selected, selection, null)) setSelected(null);
+        }}
+      />
+    );
   }
 
   return (

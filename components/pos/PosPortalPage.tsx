@@ -49,13 +49,15 @@ import { IDLE_DISPLAY, type PosDisplayPayload } from "../../lib/posDisplay";
 import netsSocketService, {
   normalizeRealtimeStatus,
 } from "../../lib/netsSocketService";
-import { formatTempleDateTime, getTempleTimeParts } from "../../lib/datetime";
+import { formatHHMMDisplay, formatTempleDateTime, getTempleTimeParts, parseISODateString } from "../../lib/datetime";
 import {
   sanitizeMobileInput,
   isValidSgMobile,
   SG_MOBILE_ERROR,
 } from "../../lib/mobileNumber";
 import PosEventsSection, { type PosEvent } from "./PosEventsSection";
+import type { EventSelection } from "./PosEventBooking";
+import { formatEventSlot, type EventSlotInfo } from "../../lib/eventSlot";
 import DivineInput from "../divine/DivineInput";
 import DivineButton from "../divine/DivineButton";
 import { StayOnPageWarning } from "../divine/StatusBanner";
@@ -84,7 +86,6 @@ import {
   CheckIcon,
   CloseIcon,
   StarIcon,
-  BoxIcon,
   CalendarIcon,
 } from "../divine/icons";
 
@@ -112,15 +113,6 @@ const POS_BTN_FAVORITE_ON =
   "border-amber-400 bg-amber-300 text-[#5b1020] hover:bg-amber-400";
 const POS_BTN_FAVORITE_OFF =
   "border-amber-400/50 bg-white text-amber-700 hover:border-amber-500/70 hover:bg-amber-50";
-
-// Indigo-themed variant of the pair above, for the static General Items
-// tab — same reasoning as Favorites' own pair, so this tab reads as its
-// own distinct "style" rather than a category, matching its indigo card
-// theme (see CATALOGUE_CARD_THEME.generalItem).
-const POS_BTN_GENERAL_ON =
-  "border-[#3730A3] bg-[#3730A3] text-white hover:bg-[#312e81]";
-const POS_BTN_GENERAL_OFF =
-  "border-[#3730A3]/40 bg-white text-[#3730A3] hover:border-[#3730A3]/60 hover:bg-indigo-50";
 
 const POS_PANEL =
   "overflow-hidden rounded-2xl border border-[#7c1527]/30 shadow-[0_16px_36px_-12px_rgba(0,0,0,0.28),0_6px_16px_-6px_rgba(124,21,39,0.32)]";
@@ -250,6 +242,8 @@ type PosGeneralItem = {
   inventory: InventoryInfo;
   categoryId?: string | null;
   favorite?: boolean;
+  /** Every category / sub category pairing the General Item is filed under. */
+  categoryDetails?: { category: { _id: string } | null; subCategory: { _id: string } | null }[];
 };
 
 type Offering =
@@ -359,9 +353,12 @@ type DevoteeSuggestion = {
 // freshly-typed devotee name belongs in when it gets saved to the profile.
 const LATIN_NAME_RE = /^[a-zA-Z\s.'-]+$/;
 
+/** The slot an Event cart line is booked on. */
+type CartEventSlot = { slotKey: string; slotName: string; date: string; startTime: string; endTime: string };
+
 type CartLine = {
   id: string;
-  refType: "Item" | "Service" | "GeneralItem";
+  refType: "Item" | "Service" | "GeneralItem" | "Event";
   refId: string;
   name: string;
   code: string;
@@ -380,7 +377,25 @@ type CartLine = {
   // purely as a defensive fallback — if a line somehow arrives without it,
   // it just doesn't get an Edit button (see CartLineRow) instead of crashing.
   offering?: Offering;
+  // Event lines only: the event itself (kept for re-opening its booking flow
+  // from the cart's Edit button) and the slot the line is booked on. Events
+  // are priced per booking, so quantity stays 1.
+  event?: PosEvent;
+  eventSlot?: CartEventSlot | null;
 };
+
+/** The one place a cart line is turned into the request shape the summary and order APIs take. */
+function toCartPayloadLine(l: CartLine) {
+  return {
+    refType: l.refType,
+    refId: l.refId,
+    quantity: l.quantity,
+    deities: l.deities,
+    devotees: l.devotees,
+    ...(l.refType === "GeneralItem" ? { manualUnitPrice: l.unitPrice } : {}),
+    ...(l.refType === "Event" ? { slotKey: l.eventSlot?.slotKey ?? null } : {}),
+  };
+}
 
 type SummaryLine = {
   refType: string;
@@ -404,7 +419,7 @@ type SummaryResponse = {
 type PaymentMode = { _id: string; name: string };
 
 type RecentBookingLine = {
-  refType: "Item" | "Service" | "GeneralItem";
+  refType: "Item" | "Service" | "GeneralItem" | "Event";
   refId: string;
   name: string;
   code: string;
@@ -413,6 +428,7 @@ type RecentBookingLine = {
   deities: DeityOption[];
   devotees: Devotee[];
   lineTotal: number;
+  eventSlot?: EventSlotInfo | null;
 };
 
 type RecentBooking = {
@@ -427,7 +443,7 @@ type RecentBooking = {
 /** One line's outcome from POST /pos/booking/recheck-lines — `available`
  *  decides whether it can be re-added to the cart as-is. */
 type RecheckedLine = {
-  refType: "Item" | "Service" | "GeneralItem";
+  refType: "Item" | "Service" | "GeneralItem" | "Event";
   refId: string;
   quantity: number;
   deities: string[];
@@ -646,9 +662,9 @@ export default function PosPortalPage() {
   // above, not folded into folder/category browsing: priceless-at-setup
   // goods (sarees, old deity photos, etc.) get their own flat, cross-
   // category list and their own indigo theme (see CATALOGUE_CARD_THEME).
-  const [showingGeneralItems, setShowingGeneralItems] = useState(false);
+  // General Items no longer have a tab of their own: they are filed under
+  // their category (and appear in Favorites and search) like any other offering.
   const [generalItems, setGeneralItems] = useState<PosGeneralItem[]>([]);
-  const [generalItemsLoading, setGeneralItemsLoading] = useState(false);
   // Static "Events" tab — sits ahead of Favorites and only exists while the
   // server returns at least one live or upcoming event (see loadEvents).
   const [showingEvents, setShowingEvents] = useState(false);
@@ -664,11 +680,8 @@ export default function PosPortalPage() {
   const [offeringSearch, setOfferingSearch] = useState("");
   const [searchItems, setSearchItems] = useState<PosItem[]>([]);
   const [searchServices, setSearchServices] = useState<PosService[]>([]);
+  const [searchGeneralItems, setSearchGeneralItems] = useState<PosGeneralItem[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-
-  const totalOfferingCount =
-    catalogueTotalCount ||
-    folders.length + uncategorizedItems.length + uncategorizedServices.length;
 
   async function loadCatalogue() {
     setCatalogueLoading(true);
@@ -727,8 +740,10 @@ export default function PosPortalPage() {
   }
 
   useEffect(() => {
-    loadFavorites().then((count) => {
-      if (!count) setShowingFavorites(false);
+    // Land on Favorites; with none (items, services or general items) the
+    // first category tab is picked instead (see the effect further down).
+    Promise.all([loadFavorites(), loadGeneralItems()]).then(([count, general]) => {
+      if (!count && !general.some((g) => g.favorite)) setShowingFavorites(false);
     });
   }, []);
 
@@ -737,31 +752,23 @@ export default function PosPortalPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showingFavorites]);
 
-  // Same reasoning as loadFavorites — a flat list fetched up front (for the
-  // tab's own count badge) and re-fetched whenever the tab is (re)opened.
-  async function loadGeneralItems() {
-    setGeneralItemsLoading(true);
+  // Every General Item, loaded once: they are filed under their categories
+  // client-side (a category tab, its count, Favorites and search all read
+  // from this list), exactly like the Item/Service catalogue.
+  async function loadGeneralItems(): Promise<PosGeneralItem[]> {
     try {
       const r = await api.get<ApiEnvelope<{ items: PosGeneralItem[] }>>(
         "/pos/booking/general-items",
         { params: { pageSize: 100 } },
       );
-      setGeneralItems(unwrap(r).items);
+      const items = unwrap(r).items;
+      setGeneralItems(items);
+      return items;
     } catch (err) {
       toast.error(extractErrorMessage(err));
-    } finally {
-      setGeneralItemsLoading(false);
+      return [];
     }
   }
-
-  useEffect(() => {
-    loadGeneralItems();
-  }, []);
-
-  useEffect(() => {
-    if (showingGeneralItems) loadGeneralItems();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showingGeneralItems]);
 
   // Fetched up front so the tab (and its count) only appear when there is
   // something to show, and again whenever the tab is opened so a newly added
@@ -825,10 +832,30 @@ export default function PosPortalPage() {
     activeFolder?.subCategoryId,
     offeringSearch,
     showingFavorites,
-    showingGeneralItems,
     showingEvents,
     cataloguePageSize,
   ]);
+
+  // The General Items filed under the selected category (any of their
+  // category pairings), shown right in that category's grid.
+  const categoryGeneralItems = useMemo(
+    () =>
+      selectedCategoryId
+        ? generalItems.filter((g) =>
+            (g.categoryDetails ?? []).some((cd) => cd.category?._id === selectedCategoryId),
+          )
+        : [],
+    [generalItems, selectedCategoryId],
+  );
+  // How many General Items each category tab holds, for the tab's count.
+  const generalCountByCategory = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const g of generalItems) {
+      const ids = new Set((g.categoryDetails ?? []).map((cd) => cd.category?._id).filter(Boolean) as string[]);
+      ids.forEach((id) => counts.set(id, (counts.get(id) ?? 0) + 1));
+    }
+    return counts;
+  }, [generalItems]);
 
   const defaultCatalogueDescriptors = useMemo<CatalogueCardDescriptor[]>(
     () => [
@@ -843,32 +870,38 @@ export default function PosPortalPage() {
         visibleUncategorizedItems,
         visibleUncategorizedServices,
       ),
+      ...generalItemDescriptors(categoryGeneralItems),
     ],
-    [visibleFolders, visibleUncategorizedItems, visibleUncategorizedServices],
+    [visibleFolders, visibleUncategorizedItems, visibleUncategorizedServices, categoryGeneralItems],
   );
   const folderCatalogueDescriptors = useMemo(
     () => offeringDescriptors(folderItems, folderServices),
     [folderItems, folderServices],
   );
   const searchCatalogueDescriptors = useMemo(
-    () => offeringDescriptors(searchItems, searchServices),
-    [searchItems, searchServices],
+    () => [...offeringDescriptors(searchItems, searchServices), ...generalItemDescriptors(searchGeneralItems)],
+    [searchItems, searchServices, searchGeneralItems],
   );
+  const favoriteGeneralItems = useMemo(() => generalItems.filter((g) => g.favorite), [generalItems]);
   const favoriteCatalogueDescriptors = useMemo(
-    () => offeringDescriptors(favoriteItems, favoriteServices),
-    [favoriteItems, favoriteServices],
+    () => [...offeringDescriptors(favoriteItems, favoriteServices), ...generalItemDescriptors(favoriteGeneralItems)],
+    [favoriteItems, favoriteServices, favoriteGeneralItems],
   );
-  const favoriteCount = favoriteItems.length + favoriteServices.length;
-  const generalItemCatalogueDescriptors = useMemo(
-    () => generalItemDescriptors(generalItems),
-    [generalItems],
-  );
+  const favoriteCount = favoriteItems.length + favoriteServices.length + favoriteGeneralItems.length;
+
+  // There is no "All Categories" tab any more, so whenever neither Events nor
+  // Favorites is showing, a real category must be selected. This lands on the
+  // first category when Favorites turns out to be empty (and after a new
+  // transaction with no favourites).
+  useEffect(() => {
+    if (showingFavorites || showingEvents || selectedCategoryId || categories.length === 0) return;
+    setSelectedCategoryId(categories[0]._id);
+  }, [showingFavorites, showingEvents, selectedCategoryId, categories]);
 
   function openFolder(folder: Folder) {
     setActiveFolder(folder);
     setOfferingSearch("");
     setShowingFavorites(false);
-    setShowingGeneralItems(false);
     setShowingEvents(false);
   }
 
@@ -901,6 +934,7 @@ export default function PosPortalPage() {
     if (!offeringSearch.trim()) {
       setSearchItems([]);
       setSearchServices([]);
+      setSearchGeneralItems([]);
       return;
     }
     setActiveFolder(null);
@@ -921,10 +955,18 @@ export default function PosPortalPage() {
             pageSize: 50,
           },
         }),
+        api.get<ApiEnvelope<{ items: PosGeneralItem[] }>>("/pos/booking/general-items", {
+          params: {
+            search: offeringSearch,
+            category: selectedCategoryId || undefined,
+            pageSize: 50,
+          },
+        }),
       ])
-        .then(([itemsRes, servicesRes]) => {
+        .then(([itemsRes, servicesRes, generalRes]) => {
           setSearchItems(unwrap(itemsRes).items);
           setSearchServices(unwrap(servicesRes).items);
+          setSearchGeneralItems(unwrap(generalRes).items);
         })
         .catch((err) => toast.error(extractErrorMessage(err)))
         .finally(() => setSearchLoading(false));
@@ -1015,6 +1057,8 @@ export default function PosPortalPage() {
           // Not part of Item/Service lines, but a General Item's typed
           // amount changing (via the Edit modal) IS a reason to re-summarize.
           manualUnitPrice: l.refType === "GeneralItem" ? l.unitPrice : undefined,
+          // Changing an Event line's slot changes the seats it needs.
+          slotKey: l.refType === "Event" ? l.eventSlot?.slotKey : undefined,
         })),
       ),
     [cart],
@@ -1041,14 +1085,7 @@ export default function PosPortalPage() {
           "/pos/booking/summary",
           {
             customerId: selectedCustomer._id,
-            lines: requestedLines.map((l) => ({
-              refType: l.refType,
-              refId: l.refId,
-              quantity: l.quantity,
-              deities: l.deities,
-              devotees: l.devotees,
-              ...(l.refType === "GeneralItem" ? { manualUnitPrice: l.unitPrice } : {}),
-            })),
+            lines: requestedLines.map(toCartPayloadLine),
           },
         );
         // A newer request has since gone out (the cart changed again while
@@ -1343,6 +1380,86 @@ export default function PosPortalPage() {
     name: string;
     kind: "added" | "updated";
   } | null>(null);
+
+  // ── Event lines ─────────────────────────────────────────────────────────
+  // An event line is added (or edited) from the Events tab's own in-panel
+  // booking flow rather than the add-to-cart modal Items/Services use.
+  const [editingEventLine, setEditingEventLine] = useState<{
+    event: PosEvent;
+    selection: EventSelection;
+    lineId: string;
+  } | null>(null);
+
+  async function submitEventSelection(event: PosEvent, selection: EventSelection, lineId: string | null): Promise<boolean> {
+    // Same as adding an Item or Service: with no customer chosen yet, the
+    // booking goes under the signed-in staff member's own profile - without
+    // one the cart can't be priced and Proceed to Payment stays blocked.
+    if (!selectedCustomer) {
+      const self = await resolveSelfCustomer();
+      if (!self) return false;
+      selectCustomer(self);
+    }
+    const eventSlot: CartEventSlot | null = selection.slot
+      ? {
+          slotKey: selection.slotKey ?? "",
+          slotName: selection.slot.slotName,
+          date: selection.slot.date,
+          startTime: selection.slot.startTime,
+          endTime: selection.slot.endTime,
+        }
+      : null;
+    const next: Omit<CartLine, "id"> = {
+      refType: "Event",
+      refId: event._id,
+      name: event.name,
+      code: event.code,
+      quantity: 1,
+      unitPrice: event.salePrice,
+      deities: selection.deityIds,
+      devotees: selection.devotees,
+      event,
+      eventSlot,
+    };
+    if (lineId) {
+      // Drop the old line's priced fields so the cart shows the new price
+      // only once the summary has recomputed it for the edited booking.
+      setCart((prev) => prev.map((l) => (l.id === lineId ? { ...next, id: lineId } : l)));
+      setEditingEventLine(null);
+      setCartNotice({ name: event.name, kind: "updated" });
+    } else {
+      setCart((prev) => [...prev, { ...next, id: newLineId() }]);
+      setCartNotice({ name: event.name, kind: "added" });
+    }
+    return true;
+  }
+
+  function openEventEdit(line: CartLine) {
+    if (!line.event) return;
+    setEditingEventLine({
+      event: line.event,
+      lineId: line.id,
+      selection: {
+        eventId: line.refId,
+        slot: line.eventSlot
+          ? {
+              slotName: line.eventSlot.slotName,
+              date: line.eventSlot.date,
+              startTime: line.eventSlot.startTime,
+              endTime: line.eventSlot.endTime,
+              totalSeats: 0,
+            }
+          : null,
+        slotKey: line.eventSlot?.slotKey ?? null,
+        deityIds: line.deities,
+        devotees: line.devotees,
+      },
+    });
+    setOfferingSearch("");
+    setSelectedCategoryId("");
+    setActiveFolder(null);
+    setShowingFavorites(false);
+    setShowingEvents(true);
+  }
 
   async function openAddModal(offering: Offering) {
     if (!selectedCustomer) {
@@ -1817,9 +1934,18 @@ export default function PosPortalPage() {
   // button, which is easy to miss until the very end.
   const needsCustomerForCart = cart.length > 0 && !selectedCustomer;
 
-  function openPaymentPopup() {
+  async function openPaymentPopup() {
     if (!selectedCustomer) {
-      toast.error("Select a customer above to proceed.");
+      if (cart.length === 0) {
+        toast.error("Select a customer above to proceed.");
+        return;
+      }
+      // Lines are in the cart but nobody was chosen (e.g. an event added
+      // before this fix): book under the signed-in staff member's own
+      // profile, same as adding an Item or Service does. Totals are then
+      // calculated and Proceed becomes available.
+      const self = await resolveSelfCustomer();
+      if (self) selectCustomer(self);
       return;
     }
     if (cart.length === 0) {
@@ -1873,14 +1999,7 @@ export default function PosPortalPage() {
         "/pos/booking/orders",
         {
           customerId: selectedCustomer._id,
-          lines: cart.map((l) => ({
-            refType: l.refType,
-            refId: l.refId,
-            quantity: l.quantity,
-            deities: l.deities,
-            devotees: l.devotees,
-            ...(l.refType === "GeneralItem" ? { manualUnitPrice: l.unitPrice } : {}),
-          })),
+          lines: cart.map(toCartPayloadLine),
           paymentModeId: selectedPaymentModeId,
           paidAmount: paymentAmount,
         },
@@ -2062,6 +2181,7 @@ export default function PosPortalPage() {
       name: l.name,
       quantity: l.quantity,
       lineTotal: l.lineTotal ?? l.unitPrice * l.quantity,
+      detail: l.refType === "Event" && l.eventSlot ? formatEventSlot(l.eventSlot) : undefined,
     }));
     const grandTotal =
       step === "done" && confirmation
@@ -2187,7 +2307,7 @@ export default function PosPortalPage() {
 
   const showingSearch = offeringSearch.trim().length > 0;
   const showingFolder =
-    !showingSearch && !showingFavorites && !showingGeneralItems && !showingEvents && activeFolder;
+    !showingSearch && !showingFavorites && !showingEvents && activeFolder;
 
   return (
     <PosShell
@@ -2519,8 +2639,7 @@ export default function PosPortalPage() {
                   onClick={() => {
                     setShowingEvents(true);
                     setShowingFavorites(false);
-                    setShowingGeneralItems(false);
-                    setSelectedCategoryId("");
+                                    setSelectedCategoryId("");
                     setActiveFolder(null);
                     setOfferingSearch("");
                   }}
@@ -2541,8 +2660,7 @@ export default function PosPortalPage() {
                 onClick={() => {
                   setShowingFavorites(true);
                   setShowingEvents(false);
-                  setShowingGeneralItems(false);
-                  setSelectedCategoryId("");
+                                setSelectedCategoryId("");
                   setActiveFolder(null);
                   setOfferingSearch("");
                 }}
@@ -2553,40 +2671,6 @@ export default function PosPortalPage() {
                 <StarIcon filled className="h-4 w-4" />
                 Favorites ({favoriteCount})
               </button>
-              {/* Static "General Items" tab — same standalone treatment as
-                  Favorites, its own indigo theme so priceless-at-setup goods
-                  (sarees, old deity photos, etc.) read as their own style,
-                  never mixed into the Item/Service folder browser. */}
-              <button
-                onClick={() => {
-                  setShowingGeneralItems(true);
-                  setShowingEvents(false);
-                  setShowingFavorites(false);
-                  setSelectedCategoryId("");
-                  setActiveFolder(null);
-                  setOfferingSearch("");
-                }}
-                className={`inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-[12.5px] font-semibold shadow-sm transition-[box-shadow,background-color,color,border-color] duration-200 hover:shadow-[0_6px_16px_-4px_rgba(55,48,163,0.35)] sm:h-12 ${
-                  showingGeneralItems ? POS_BTN_GENERAL_ON : POS_BTN_GENERAL_OFF
-                }`}
-              >
-                <BoxIcon />
-                General Items ({generalItems.length})
-              </button>
-              <button
-                onClick={() => {
-                  setShowingFavorites(false);
-                  setShowingEvents(false);
-                  setShowingGeneralItems(false);
-                  setSelectedCategoryId("");
-                  setActiveFolder(null);
-                }}
-                className={`inline-flex h-11 shrink-0 items-center rounded-xl border px-3.5 text-[12.5px] font-medium shadow-sm transition-[box-shadow,background-color,color,border-color] duration-200 hover:shadow-[0_6px_16px_-4px_rgba(124,21,39,0.4)] sm:h-12 ${
-                  !showingFavorites && !showingGeneralItems && !showingEvents && !selectedCategoryId ? POS_BTN_ON : POS_BTN_OFF
-                }`}
-              >
-                All Categories ({totalOfferingCount})
-              </button>
               {categories.map((c) => {
                 const catImg = resolveImageUrl(c.image);
                 return (
@@ -2595,12 +2679,11 @@ export default function PosPortalPage() {
                     onClick={() => {
                       setShowingFavorites(false);
                       setShowingEvents(false);
-                      setShowingGeneralItems(false);
-                      setSelectedCategoryId(c._id);
+                                        setSelectedCategoryId(c._id);
                       setActiveFolder(null);
                     }}
                     className={`inline-flex h-11 shrink-0 items-center gap-2.5 rounded-xl border py-1 pl-1.5 pr-3.5 text-[12.5px] font-medium shadow-sm transition-[box-shadow,background-color,color,border-color] duration-200 hover:shadow-[0_6px_16px_-4px_rgba(124,21,39,0.4)] sm:h-12 ${
-                      !showingFavorites && !showingGeneralItems && !showingEvents && selectedCategoryId === c._id ? POS_BTN_ON : POS_BTN_OFF
+                      !showingFavorites && !showingEvents && selectedCategoryId === c._id ? POS_BTN_ON : POS_BTN_OFF
                     }`}
                   >
                     {catImg ? (
@@ -2612,7 +2695,7 @@ export default function PosPortalPage() {
                         />
                       </span>
                     ) : null}
-                    {c.name} ({c.count})
+                    {c.name} ({c.count + (generalCountByCategory.get(c._id) ?? 0)})
                   </button>
                 );
               })}
@@ -2630,9 +2713,7 @@ export default function PosPortalPage() {
                   ? "#c1440e12"
                   : !showingSearch && showingFavorites
                   ? "#fcd34d18"
-                  : !showingSearch && showingGeneralItems
-                    ? "#3730A318"
-                    : selectedCategory?.color
+                  : selectedCategory?.color
                       ? `${selectedCategory.color}18`
                       : "transparent",
             }}
@@ -2678,7 +2759,13 @@ export default function PosPortalPage() {
                     <EmblemLoader size="sm" label="Loading events…" />
                   </div>
                 ) : (
-                  <PosEventsSection events={events} nakshatraOptions={nakshatraOptions} />
+                  <PosEventsSection
+                    events={events}
+                    nakshatraOptions={nakshatraOptions}
+                    onSubmitSelection={submitEventSelection}
+                    editing={editingEventLine}
+                    onCancelEdit={() => setEditingEventLine(null)}
+                  />
                 )}
               </div>
             )}
@@ -2710,37 +2797,9 @@ export default function PosPortalPage() {
               </div>
             )}
 
-            {!catalogueLoading && !showingSearch && showingGeneralItems && (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <div className="mb-4 flex shrink-0 items-center gap-2 text-[12.5px]">
-                  <span className="flex items-center gap-1.5 font-accent text-[16px] font-extrabold tracking-tight text-[#3730A3]">
-                    <BoxIcon /> General Items
-                  </span>
-                  <span className="text-ink-500">— sarees, old deity photos, and other goods priced at the counter</span>
-                </div>
-                {generalItemsLoading ? (
-                  <div className="flex justify-center py-8">
-                    <EmblemLoader size="sm" label="Loading general items…" />
-                  </div>
-                ) : (
-                  <CatalogueGrid
-                    descriptors={generalItemCatalogueDescriptors}
-                    page={cataloguePage}
-                    onPageChange={setCataloguePage}
-                    pageSize={cataloguePageSize}
-                    onPageSizeChange={setCataloguePageSize}
-                    onPickOffering={openAddModal}
-                    onOpenFolder={openFolder}
-                    emptyMessage="No General Items yet — add one from the General Item master."
-                  />
-                )}
-              </div>
-            )}
-
             {!catalogueLoading &&
               !showingSearch &&
               !showingFavorites &&
-              !showingGeneralItems &&
               !showingEvents &&
               showingFolder &&
               activeFolder && (
@@ -2748,13 +2807,10 @@ export default function PosPortalPage() {
                   <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-1.5 text-[12.5px]">
                       <button
-                        onClick={() => {
-                          setActiveFolder(null);
-                          setSelectedCategoryId("");
-                        }}
+                        onClick={() => setActiveFolder(null)}
                         className="flex items-center gap-1 text-ink-500 transition-colors hover:text-flame-600"
                       >
-                        <HomeIcon /> All Categories
+                        <HomeIcon /> {selectedCategory?.name ?? "Categories"}
                       </button>
                       <ChevronIcon className="-rotate-90 text-ink-400" />
                       <span className="flex items-center gap-1.5 font-accent text-[16px] font-extrabold tracking-tight text-ink-100">
@@ -2790,7 +2846,6 @@ export default function PosPortalPage() {
             {!catalogueLoading &&
               !showingSearch &&
               !showingFavorites &&
-              !showingGeneralItems &&
               !showingEvents &&
               !showingFolder && (
               <CatalogueGrid
@@ -2871,7 +2926,7 @@ export default function PosPortalPage() {
                       >
                         <CartLineRow
                           line={line}
-                          onEdit={() => openEditModal(line)}
+                          onEdit={() => (line.refType === "Event" ? openEventEdit(line) : openEditModal(line))}
                           onRemove={() => removeCartLine(line.id)}
                           onIncrement={() => adjustCartLineQuantity(line.id, 1)}
                           onDecrement={() =>
@@ -2923,7 +2978,11 @@ export default function PosPortalPage() {
                   icon={<LockIcon />}
                   chevron={false}
                   onClick={openPaymentPopup}
-                  disabled={!canProceed || bookingLoading}
+                  // Stays clickable while no customer is chosen, so pressing it explains what is
+                  // missing (openPaymentPopup shows "Select a customer above to proceed.") instead
+                  // of looking dead. Other blockers (empty cart, stock issues, totals still
+                  // calculating) keep it disabled.
+                  disabled={(!canProceed && !!selectedCustomer) || bookingLoading}
                   className="w-full justify-center"
                 >
                   Proceed to Payment
@@ -5484,13 +5543,18 @@ function CartLineRow({
   const hasFamilyMembers = line.offering
     ? Boolean(line.offering.isFamilyMembersRequired)
     : line.devotees.length > 0;
-  const showStepper = !hasDeityChoices && !hasFamilyMembers;
+  const isEvent = line.refType === "Event";
+  // Events are priced per booking (quantity stays 1) and are edited through
+  // their own booking flow, so they never get the +/- stepper or the inline
+  // devotee editor Items/Services use.
+  const showStepper = !isEvent && !hasDeityChoices && !hasFamilyMembers;
   // A General Item's Edit modal is also how its manually-typed Amount gets
   // corrected after the fact — always offer it, not just for deity/family
   // offerings.
   const showEditButton =
-    !!line.offering &&
-    (hasDeityChoices || hasFamilyMembers || line.offering.refType === "GeneralItem");
+    isEvent ||
+    (!!line.offering &&
+      (hasDeityChoices || hasFamilyMembers || line.offering.refType === "GeneralItem"));
   const maxFamilyMembers =
     line.offering?.maxFamilyMembers ?? line.devotees.length;
   // Placeholder rows so an offering that requires family-member details but
@@ -5516,11 +5580,13 @@ function CartLineRow({
           </p>
           <p className="text-[11.5px] text-ink-500">
             {line.refType === "GeneralItem" ? "General Item" : line.refType}
-            {!showStepper && ` · Qty ${line.quantity}`}
+            {!showStepper && !isEvent && ` · Qty ${line.quantity}`}
           </p>
           {line.quantityExceedsStock && (
             <p className="text-[11px] text-crimson-500">
-              Only {line.inventory?.availableQty ?? 0} available
+              {isEvent
+                ? `Only ${line.inventory?.availableQty ?? 0} seat(s) left on this slot`
+                : `Only ${line.inventory?.availableQty ?? 0} available`}
             </p>
           )}
         </div>
@@ -5575,7 +5641,46 @@ function CartLineRow({
         </div>
       )}
 
-      {hasFamilyMembers && (
+      {isEvent && (
+        <div className="mt-2 space-y-1.5 border-t border-gold-500/15 pt-2 text-[11.5px] text-ink-500">
+          {line.eventSlot && (
+            <p className="flex flex-wrap items-center gap-x-1.5 text-ink-100">
+              <span className="font-semibold">{line.eventSlot.slotName}</span>
+              <span className="tabular-nums">
+                {parseISODateString(line.eventSlot.date.slice(0, 10))?.toLocaleDateString("en-SG", {
+                  weekday: "short",
+                  day: "numeric",
+                  month: "short",
+                })}{" "}
+                · {formatHHMMDisplay(line.eventSlot.startTime)} – {formatHHMMDisplay(line.eventSlot.endTime)}
+              </span>
+            </p>
+          )}
+          {line.event && line.deities.length > 0 && (
+            <p>
+              Deities:{" "}
+              <span className="font-medium text-ink-100">
+                {line.event.deityMapping
+                  .filter((d) => line.deities.includes(d._id))
+                  .map((d) => d.name)
+                  .join(", ")}
+              </span>
+            </p>
+          )}
+          {line.devotees.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {line.devotees.map((d, i) => (
+                <span key={i} className="rounded-full bg-ivory-100 px-2 py-0.5 text-ink-100">
+                  {d.name}
+                  {d.nakshatra ? <span className="text-ink-500"> · {d.nakshatra}</span> : null}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {hasFamilyMembers && !isEvent && (
         <div className="mt-2 border-t border-gold-500/15 pt-2">
           <button
             type="button"
@@ -6341,6 +6446,11 @@ function RecentBookingModal({
                     <p className="text-[11.5px] text-ink-500">
                       {line.refType} · {line.code} · Qty {line.quantity}
                     </p>
+                    {line.eventSlot && (
+                      <p className="mt-1 text-[11.5px] text-ink-500">
+                        Slot: {formatEventSlot(line.eventSlot)}
+                      </p>
+                    )}
                     {line.deities.length > 0 && (
                       <p className="mt-1 text-[11.5px] text-ink-500">
                         Deities: {line.deities.map((d) => d.name).join(", ")}

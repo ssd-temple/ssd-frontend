@@ -202,7 +202,11 @@ export default function PosCustomerDisplayPage() {
                       >
                         <div className="min-w-0">
                           <p className="truncate text-[15px] font-semibold">{line.name}</p>
-                          <p className="text-[12px] text-ink-500">Qty {line.quantity}</p>
+                          {line.detail ? (
+                            <p className="text-[12px] text-ink-500">{line.detail}</p>
+                          ) : (
+                            <p className="text-[12px] text-ink-500">Qty {line.quantity}</p>
+                          )}
                         </div>
                         <p className="shrink-0 text-[15px] font-bold text-[#7c1527]">
                           {formatCurrency(line.lineTotal)}

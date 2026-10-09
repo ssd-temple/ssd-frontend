@@ -41,6 +41,9 @@ import { StayOnPageWarning } from "../divine/StatusBanner";
 import { EmblemLoaderOverlay } from "../divine/EmblemLoader";
 import DivineListbox, { type ListboxOption } from "../divine/DivineListbox";
 import DivineMultiSelect from "../divine/DivineMultiSelect";
+import PosEventsSection, { type PosEvent } from "../pos/PosEventsSection";
+import type { EventSelection } from "../pos/PosEventBooking";
+import { formatEventSlot, type EventSlotInfo } from "../../lib/eventSlot";
 import {
   SearchIcon,
   TrashIcon,
@@ -112,7 +115,7 @@ type Devotee = { name: string; nakshatra: string };
 
 type CartLine = {
   id: string; // local key only
-  refType: "Item" | "Service" | "GeneralItem";
+  refType: "Item" | "Service" | "GeneralItem" | "Event";
   refId: string;
   name: string;
   code: string;
@@ -125,7 +128,23 @@ type CartLine = {
   lineGst?: number;
   inventory?: InventoryInfo;
   quantityExceedsStock?: boolean;
+  // Event lines only: the slot booked, and the event itself (for its deity names).
+  eventSlot?: (EventSlotInfo & { slotKey: string }) | null;
+  event?: PosEvent;
 };
+
+/** The one place a cart line becomes the request shape the summary and order APIs take. */
+function toCartPayloadLine(l: CartLine) {
+  return {
+    refType: l.refType,
+    refId: l.refId,
+    quantity: l.quantity,
+    deities: l.deities,
+    devotees: l.devotees,
+    ...(l.refType === "GeneralItem" ? { manualUnitPrice: l.unitPrice } : {}),
+    ...(l.refType === "Event" ? { slotKey: l.eventSlot?.slotKey ?? null } : {}),
+  };
+}
 
 type SummaryLine = {
   refType: string;
@@ -276,7 +295,8 @@ export default function AdminBookingPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
   // ── catalogue ───────────────────────────────────────────────────────────────
-  const [refType, setRefType] = useState<"Item" | "Service" | "GeneralItem">("Item");
+  const [refType, setRefType] = useState<"Item" | "Service" | "GeneralItem" | "Event">("Item");
+  const [events, setEvents] = useState<PosEvent[]>([]);
   const [itemSearch, setItemSearch] = useState("");
   const [items, setItems] = useState<PosItem[]>([]);
   const [services, setServices] = useState<PosService[]>([]);
@@ -329,6 +349,7 @@ export default function AdminBookingPage() {
           deities: l.deities,
           devotees: l.devotees,
           manualUnitPrice: l.refType === "GeneralItem" ? l.unitPrice : undefined,
+          slotKey: l.refType === "Event" ? l.eventSlot?.slotKey : undefined,
         }))
       ),
     [cart]
@@ -466,14 +487,7 @@ export default function AdminBookingPage() {
       try {
         const r = await api.post<ApiEnvelope<SummaryResponse>>("/pos/admin/booking/summary", {
           customerId: selectedCustomer._id,
-          lines: cart.map((l) => ({
-            refType: l.refType,
-            refId: l.refId,
-            quantity: l.quantity,
-            deities: l.deities,
-            devotees: l.devotees,
-            ...(l.refType === "GeneralItem" ? { manualUnitPrice: l.unitPrice } : {}),
-          })),
+          lines: cart.map(toCartPayloadLine),
         });
         const data = unwrap(r);
         setSummary(data);
@@ -597,6 +611,51 @@ export default function AdminBookingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedItemId, selectedServiceId, selectedGeneralItemId]);
 
+  // ─── events ───────────────────────────────────────────────────────────────
+  // Live and upcoming events, fetched the first time the Event tab is opened.
+  useEffect(() => {
+    if (refType !== "Event" || events.length > 0) return;
+    api
+      .get<ApiEnvelope<{ items: PosEvent[] }>>("/pos/admin/booking/events")
+      .then((r) => setEvents(unwrap(r).items))
+      .catch((err) => toast.error(extractErrorMessage(err)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refType]);
+
+  function addEventToCart(event: PosEvent, selection: EventSelection): boolean {
+    if (!selectedCustomer) {
+      toast.error("Please select a customer first.");
+      return false;
+    }
+    const slot = selection.slot;
+    setCart((prev) => [
+      ...prev,
+      {
+        id: newLineId(),
+        refType: "Event",
+        refId: event._id,
+        name: event.name,
+        code: event.code,
+        quantity: 1,
+        unitPrice: event.salePrice,
+        deities: selection.deityIds,
+        devotees: selection.devotees,
+        event,
+        eventSlot: slot
+          ? {
+              slotKey: selection.slotKey ?? "",
+              slotName: slot.slotName,
+              date: slot.date,
+              startTime: slot.startTime,
+              endTime: slot.endTime,
+            }
+          : null,
+      },
+    ]);
+    toast.created("Event added to the cart.");
+    return true;
+  }
+
   // ─── add to cart ──────────────────────────────────────────────────────────
   function addToCart() {
     if (!selectedCustomer) {
@@ -687,14 +746,7 @@ export default function AdminBookingPage() {
       // confirmation lands server-side, picked up by polling below.
       const orderRes = await api.post<ApiEnvelope<CreateOrderResult>>("/pos/admin/booking/orders", {
         customerId: selectedCustomer._id,
-        lines: cart.map((l) => ({
-          refType: l.refType,
-          refId: l.refId,
-          quantity: l.quantity,
-          deities: l.deities,
-          devotees: l.devotees,
-          ...(l.refType === "GeneralItem" ? { manualUnitPrice: l.unitPrice } : {}),
-        })),
+        lines: cart.map(toCartPayloadLine),
         paymentModeId: selectedPaymentModeId,
         paidAmount: paymentAmount,
       });
@@ -866,10 +918,10 @@ export default function AdminBookingPage() {
           </Section>
 
           {/* Item / Service selector */}
-          <Section title="Select Item / Service and Add to Cart">
+          <Section title="Select Item / Service / Event and Add to Cart">
             {/* Type toggle */}
             <div className="flex flex-wrap gap-4">
-              {(["Item", "Service", "GeneralItem"] as const).map((t) => (
+              {(["Item", "Service", "GeneralItem", "Event"] as const).map((t) => (
                 <label key={t} className="flex cursor-pointer items-center gap-2 text-[13.5px] text-ink-200">
                   <input
                     type="radio"
@@ -884,6 +936,23 @@ export default function AdminBookingPage() {
               ))}
             </div>
 
+            {refType === "Event" && (
+              <div className="flex max-h-[36rem] min-h-[18rem] flex-col rounded-xl bg-[#fbf3e4]/50 p-3">
+                {events.length === 0 ? (
+                  <p className="py-8 text-center text-[13px] text-ink-500">No live or upcoming events right now.</p>
+                ) : (
+                  <PosEventsSection
+                    events={events}
+                    nakshatraOptions={nakshatraOptions}
+                    onSubmitSelection={(event, selection) => addEventToCart(event, selection)}
+                    editing={null}
+                    onCancelEdit={() => {}}
+                  />
+                )}
+              </div>
+            )}
+
+            {refType !== "Event" && (<>
             {/* Item / service / general item search */}
             <div className="relative">
               <DivineInput
@@ -1091,6 +1160,7 @@ export default function AdminBookingPage() {
                 Add to Cart
               </button>
             </div>
+            </>)}
           </Section>
 
           {/* Cart lines */}
@@ -1134,7 +1204,7 @@ export default function AdminBookingPage() {
 
             {!summaryLoading && cart.length === 0 && (
               <p className="py-8 text-center text-[13px] text-ink-500">
-                Add items or services to see the summary.
+                Add items, services or events to see the summary.
               </p>
             )}
 
@@ -1148,7 +1218,7 @@ export default function AdminBookingPage() {
                         <p className="text-[12px] text-ink-500">{line.code} · {line.refType} · Qty {line.quantity}</p>
                         {line.quantityExceedsStock && (
                           <p className="mt-1 text-[11.5px] text-crimson-400">
-                            ⚠ Exceeds available stock ({line.inventory?.availableQty ?? 0} available)
+                            ⚠ {line.refType === "Event" ? "Not enough seats" : "Exceeds available stock"} ({line.inventory?.availableQty ?? 0} {line.refType === "Event" ? "seat(s) left" : "available"})
                           </p>
                         )}
                       </div>
@@ -1340,12 +1410,24 @@ function CartLineRow({ line, onRemove }: { line: CartLine; onRemove: () => void 
       <div className="flex-1 min-w-0">
         <p className="text-[13.5px] font-medium text-ink-100 truncate">{line.name}</p>
         <p className="text-[12px] text-ink-500">
-          {line.code} · {line.refType} · Qty {line.quantity}
+          {line.code} · {line.refType}
+          {line.refType !== "Event" && ` · Qty ${line.quantity}`}
           {line.devotees.length > 0 && ` · ${line.devotees.map((d) => d.name).join(", ")}`}
         </p>
+        {line.refType === "Event" && (
+          <p className="text-[12px] text-ink-500">
+            {line.eventSlot ? formatEventSlot(line.eventSlot) : "No fixed slot"}
+            {line.event && line.deities.length > 0
+              ? ` · ${line.event.deityMapping
+                  .filter((d) => line.deities.includes(d._id))
+                  .map((d) => d.name)
+                  .join(", ")}`
+              : ""}
+          </p>
+        )}
         {line.quantityExceedsStock && (
           <p className="text-[11.5px] text-crimson-400">
-            ⚠ Only {line.inventory?.availableQty ?? 0} available
+            ⚠ Only {line.inventory?.availableQty ?? 0} {line.refType === "Event" ? "seat(s) left" : "available"}
           </p>
         )}
       </div>
@@ -1488,7 +1570,7 @@ function BookingSuccessView({
           <Row label="Receipt No." value={confirmation.receiptNo ?? "—"} />
           <Row label="Customer" value={`${confirmation.customer.name} (${confirmation.customer.customerCode})`} />
           <Row label="Payment Mode" value={confirmation.paymentModeName} />
-          <Row label="Items / Services" value={`${confirmation.lines.length} line(s)`} />
+          <Row label="Items / Services / Events" value={`${confirmation.lines.length} line(s)`} />
           <Row label="Total Payable Amount" value={formatCurrency(confirmation.grandTotal)} />
           <Row label="Amount Paid" value={formatCurrency(confirmation.amountPaid)} />
           <Row

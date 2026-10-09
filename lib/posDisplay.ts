@@ -5,6 +5,8 @@ export type PosDisplayLine = {
   name: string;
   quantity: number;
   lineTotal: number;
+  /** Extra line shown under the name - an Event's slot ("Evening Aarti · 11 Oct 2026 · 6:30 PM – 8:00 PM"). */
+  detail?: string;
 };
 
 /** One payment actually collected against this booking so far — Cash for

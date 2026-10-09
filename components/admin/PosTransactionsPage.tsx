@@ -11,6 +11,7 @@ import { EyeIcon, PrinterIcon } from "../divine/icons";
 import { api, unwrap, extractErrorMessage, type ApiEnvelope } from "../../lib/api";
 import { useApiResource } from "../../lib/useApiResource";
 import { formatTempleDateTime } from "../../lib/datetime";
+import { formatEventSlot, type EventSlotInfo } from "../../lib/eventSlot";
 import { toast } from "../../lib/toastStore";
 import { MODULES, usePermissions } from "../../lib/permissions";
 import { EmblemLoader } from "../divine/EmblemLoader";
@@ -63,12 +64,14 @@ type BookingDetail = {
   orderId: { _id: string; orderNumber: string; orderStatus: string } | null;
   customer: { _id: string; customerCode: string; name: string; email: string; mobileNumber: string | null } | null;
   lines: {
-    refType: "Item" | "Service" | "GeneralItem";
+    refType: "Item" | "Service" | "GeneralItem" | "Event";
     refId: string;
     name: string;
     code: string;
     quantity: number;
     unitPrice: number;
+    eventSlot?: EventSlotInfo | null;
+    seats?: number;
     deities: DeityRef[];
     devotees: Devotee[];
     lineTotal: number;
@@ -632,7 +635,7 @@ function BookingReceiptDocument({ detail }: { detail: BookingDetail }) {
           <table className="w-full border-collapse text-left">
             <thead>
               <tr className="border-b border-[#e8e4dc] text-[11px] font-medium text-[#6b6258]">
-                <th className="pb-1.5 pr-3 font-medium">Item / Service</th>
+                <th className="pb-1.5 pr-3 font-medium">Item / Service / Event</th>
                 <th className="w-12 pb-1.5 text-center font-medium">Qty</th>
                 <th className="w-20 pb-1.5 text-right font-medium">Unit</th>
                 <th className="w-20 pb-1.5 pl-3 text-right font-medium">GL Amt</th>
@@ -648,6 +651,12 @@ function BookingReceiptDocument({ detail }: { detail: BookingDetail }) {
                     <p className="mt-0.5 text-[11.5px] text-[#6b6258]">
                       {line.refType} · {line.code}
                     </p>
+                    {line.eventSlot && (
+                      <p className="mt-0.5 text-[11.5px] text-[#6b6258]">
+                        Slot: {formatEventSlot(line.eventSlot)}
+                        {line.seats && line.seats > 1 ? ` · ${line.seats} seats` : ""}
+                      </p>
+                    )}
                     {line.deities.length > 0 && (
                       <p className="mt-0.5 text-[11.5px] text-[#6b6258]">
                         Deities: {line.deities.map((d) => d.name).join(", ")}

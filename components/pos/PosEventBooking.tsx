@@ -7,7 +7,7 @@ import DevoteeNameField from "./DevoteeNameField";
 import { CalendarIcon, CheckIcon, ChevronIcon, ClockIcon, PlusIcon, TrashIcon, UsersIcon } from "../divine/icons";
 import { formatHHMMDisplay, parseISODateString } from "../../lib/datetime";
 import { resolveImageUrl } from "../../lib/imageUrl";
-import { eventImageSrc, fallbackToDefaultEventImage, type PosEvent, type PosEventSlot } from "./PosEventsSection";
+import { eventImageSrc, fallbackToDefaultEventImage, slotKeyOf, type PosEvent, type PosEventSlot } from "./PosEventsSection";
 
 type Devotee = { name: string; nakshatra: string };
 type Deity = PosEvent["deityMapping"][number];
@@ -15,6 +15,8 @@ type Deity = PosEvent["deityMapping"][number];
 export type EventSelection = {
   eventId: string;
   slot: PosEventSlot | null;
+  /** Identity of the chosen slot (see slotKeyOf) - what the server books against. */
+  slotKey: string | null;
   deityIds: string[];
   devotees: Devotee[];
 };
@@ -70,11 +72,19 @@ export default function PosEventBooking({
   event,
   nakshatraOptions,
   onBack,
+  initial,
+  onSubmit,
 }: {
   event: PosEvent;
   nakshatraOptions: ListboxOption[];
+  /** Leave the flow without saving (back to the event list). */
   onBack: () => void;
+  /** Set when an existing cart line is being edited - the flow opens pre-filled. */
+  initial?: EventSelection;
+  /** Called with the finished selection - adds a new cart line, or updates the one being edited. */
+  onSubmit: (selection: EventSelection) => void;
 }) {
+  const isEditing = Boolean(initial);
   const steps = useMemo(() => {
     const list: { key: StepKey; label: string }[] = [{ key: "slot", label: event.isSlotRequired ? "Slot" : "Details" }];
     if (event.deityMapping.length > 0) list.push({ key: "deity", label: "Deities" });
@@ -86,13 +96,23 @@ export default function PosEventBooking({
 
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
-  const [slotIndex, setSlotIndex] = useState<number | null>(null);
-  const [slotDate, setSlotDate] = useState<string>(() => (event.slotDetails[0] ? iso(event.slotDetails[0].date) : ""));
-  const [deityIds, setDeityIds] = useState<string[]>([]);
-  const [devotees, setDevotees] = useState<Devotee[]>([{ name: "", nakshatra: "" }]);
+  const [slotIndex, setSlotIndex] = useState<number | null>(() => {
+    if (!initial?.slotKey) return null;
+    const found = event.slotDetails.findIndex((s) => slotKeyOf(s) === initial.slotKey);
+    return found >= 0 ? found : null;
+  });
+  const [slotDate, setSlotDate] = useState<string>(() => {
+    const chosen = initial?.slotKey ? event.slotDetails.find((s) => slotKeyOf(s) === initial.slotKey) : undefined;
+    const first = chosen ?? event.slotDetails[0];
+    return first ? iso(first.date) : "";
+  });
+  const [deityIds, setDeityIds] = useState<string[]>(initial?.deityIds ?? []);
+  const [devotees, setDevotees] = useState<Devotee[]>(
+    initial && initial.devotees.length > 0 ? initial.devotees : [{ name: "", nakshatra: "" }]
+  );
   const [showValidation, setShowValidation] = useState(false);
-  const [accepted, setAccepted] = useState(false);
-  const [proceeded, setProceeded] = useState(false);
+  // Terms were already accepted when the line was first added.
+  const [accepted, setAccepted] = useState(isEditing);
 
   const step = steps[stepIndex].key;
   const maxMembers = event.maxFamilyMembers ?? 2;
@@ -661,29 +681,26 @@ export default function PosEventBooking({
         </motion.div>
       </AnimatePresence>
 
-      <AnimatePresence>
-        {proceeded && (
-          <motion.p
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex items-start gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-3.5 py-2.5 text-[12.5px] text-emerald-800"
-          >
-            <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
-              <CheckIcon className="h-2.5 w-2.5" />
-            </span>
-            Selection ready. Adding events to the cart is not connected yet, so nothing has been added, charged or saved.
-          </motion.p>
-        )}
-      </AnimatePresence>
-
       {/* Footer */}
       <div className="flex items-center justify-between gap-3 border-t border-[#e8d2a6]/70 pt-3">
         <button type="button" onClick={() => (stepIndex === 0 ? onBack() : go(-1))} className={GHOST_BTN}>
           {stepIndex === 0 ? "Cancel" : "Back"}
         </button>
         {step === "payment" ? (
-          <button type="button" onClick={() => setProceeded(true)} className={PRIMARY_BTN} disabled={proceeded}>
-            Add to Cart
+          <button
+            type="button"
+            onClick={() =>
+              onSubmit({
+                eventId: event._id,
+                slot: chosenSlot,
+                slotKey: chosenSlot ? slotKeyOf(chosenSlot) : null,
+                deityIds,
+                devotees: namedDevotees,
+              })
+            }
+            className={PRIMARY_BTN}
+          >
+            {isEditing ? "Update Cart" : "Add to Cart"}
           </button>
         ) : (
           <button type="button" onClick={next} className={PRIMARY_BTN}>

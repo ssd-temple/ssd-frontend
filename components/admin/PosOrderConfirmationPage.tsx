@@ -10,6 +10,7 @@ import { CheckIcon } from "../divine/icons";
 import { api, unwrap, extractErrorMessage, type ApiEnvelope } from "../../lib/api";
 import { useApiResource } from "../../lib/useApiResource";
 import { formatTempleDateTime, toISODateString } from "../../lib/datetime";
+import { formatEventSlot, type EventSlotInfo } from "../../lib/eventSlot";
 import { toast } from "../../lib/toastStore";
 import { MODULES, usePermissions } from "../../lib/permissions";
 import { EmblemLoader } from "../divine/EmblemLoader";
@@ -32,7 +33,8 @@ type PendingListItem = {
 };
 
 type LineDetail = {
-  refType: "Item" | "Service" | "GeneralItem";
+  refType: "Item" | "Service" | "GeneralItem" | "Event";
+  eventSlot?: EventSlotInfo | null;
   name: string;
   code: string;
   quantity: number;
@@ -302,6 +304,11 @@ export default function PosOrderConfirmationPage() {
                     <li key={idx} className="flex items-center justify-between gap-3">
                       <span>
                         {line.name} <span className="text-ink-500">x{line.quantity}</span>
+                        {line.refType === "Event" && (
+                          <span className="block text-[11.5px] text-ink-500">
+                            Event{line.eventSlot ? ` · ${formatEventSlot(line.eventSlot)}` : ""}
+                          </span>
+                        )}
                       </span>
                       <span className="tabular-nums">{formatCurrency(line.lineTotal)}</span>
                     </li>
