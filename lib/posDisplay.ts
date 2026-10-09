@@ -21,6 +21,13 @@ export type PosDisplayPaymentEntry = {
   amount: number;
 };
 
+/** Cash handed over at the counter for a booking: what was received, and what goes back to the devotee. */
+export type PosCashChange = {
+  received: number;
+  /** 0 = the exact amount was paid, nothing to return. */
+  change: number;
+};
+
 export type PosDisplayPayload = {
   phase: "idle" | "cart" | "collecting" | "paynow" | "terminal" | "done";
   customerName?: string | null;
@@ -36,6 +43,8 @@ export type PosDisplayPayload = {
   paymentStatus?: "paid" | "partial" | "pending" | null;
   statusMessage?: string | null;
   paymentHistory?: PosDisplayPaymentEntry[];
+  /** Cash bookings only - drives the "Balance to return" block on the success popup. */
+  cashChange?: PosCashChange | null;
 };
 
 export const IDLE_DISPLAY: PosDisplayPayload = {

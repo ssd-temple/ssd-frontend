@@ -80,6 +80,7 @@ export function SuccessModal({
   amountPaid,
   cta = "Continue",
   paymentHistory,
+  cashChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -95,6 +96,9 @@ export function SuccessModal({
    * Payment Mode cell once there's more than one, since a single mode no
    * longer says how the total was actually paid. */
   paymentHistory?: { mode: string; amount: string }[];
+  /** Cash payments only. `change` is the already-formatted amount to hand back,
+   *  or null when the exact amount was paid. Omit for every other mode. */
+  cashChange?: { received: string; change: string | null };
 }) {
   const heading = title === "Booking Success" ? "Booking Successful!" : title;
   const paid = amountPaid ?? amount;
@@ -265,6 +269,28 @@ export function SuccessModal({
                   </div>
                 </div>
               )}
+              {cashChange &&
+                (cashChange.change ? (
+                  <motion.div
+                    role="status"
+                    initial={{ opacity: 0, scale: 0.9, y: 6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.9 }}
+                    className="mt-2.5 overflow-hidden rounded-2xl border-2 border-[#e6b422] bg-gradient-to-r from-[#fff3c4] via-[#ffe38a] to-[#fff3c4] shadow-[0_10px_26px_rgba(230,180,34,0.45)]"
+                  >
+                    <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                      <div className="text-left">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#8a5a10]">Balance to return</p>
+                        <p className="text-[10.5px] text-[#8a5a10]">Cash received {cashChange.received}</p>
+                      </div>
+                      <p className="font-sans text-[28px] font-black leading-none tracking-tight text-[#7c1527]">{cashChange.change}</p>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <div role="status" className="mt-2.5 flex items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11.5px] font-semibold text-emerald-800">
+                    <span aria-hidden>✓</span> Exact amount received — no change to return
+                  </div>
+                ))}
               <div className="mt-2.5 flex items-center justify-center gap-2 rounded-xl border border-[#ead9b4] bg-[#fff8e8] px-3 py-2">
                 <span aria-hidden="true" className="relative flex h-7 w-8 shrink-0 items-center justify-center">
                   <svg width="26" height="20" viewBox="0 0 26 20" fill="none">

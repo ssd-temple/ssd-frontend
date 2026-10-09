@@ -45,7 +45,7 @@ import NetsStatusWidget from "./NetsStatusWidget";
 import { PosCustomerDisplayDock } from "./PosCustomerDisplayPage";
 import { usePosDisplayPublisher } from "../../lib/usePosDisplayPublisher";
 import { SuccessModal } from "./SuccessModal";
-import { IDLE_DISPLAY, type PosDisplayPayload } from "../../lib/posDisplay";
+import { IDLE_DISPLAY, type PosCashChange, type PosDisplayPayload } from "../../lib/posDisplay";
 import netsSocketService, {
   normalizeRealtimeStatus,
 } from "../../lib/netsSocketService";
@@ -1130,11 +1130,21 @@ export default function PosPortalPage() {
   // changes — a cashier who wants to take less than that edits it down
   // themselves; this only decides the default.
   const [paymentAmountInput, setPaymentAmountInput] = useState("");
+  // Set when a Cash booking is confirmed - drives the "Balance to return"
+  // block on the success popup (and the customer display). Cleared with the
+  // rest of the transaction.
+  const [cashChange, setCashChange] = useState<PosCashChange | null>(null);
   useEffect(() => {
     if (summary) setPaymentAmountInput(summary.grandTotal.toFixed(2));
   }, [summary?.grandTotal]);
 
   const paymentAmount = Number(paymentAmountInput);
+  // Cash is handed over as a lump sum, so more than the total may be typed
+  // in (the extra goes back as change). Every other mode pays at most the total.
+  const isCashPayment =
+    (paymentModes.find((m) => m._id === selectedPaymentModeId)?.name ?? "")
+      .trim()
+      .toLowerCase() === "cash";
   const isPartialPayment =
     paymentAmountInput !== "" &&
     !Number.isNaN(paymentAmount) &&
@@ -1153,7 +1163,16 @@ export default function PosPortalPage() {
     paymentAmountInput !== "" &&
     !Number.isNaN(paymentAmount) &&
     paymentAmount >= 0 &&
-    paymentAmount <= summary.grandTotal;
+    (isCashPayment || paymentAmount <= summary.grandTotal);
+  // What is actually collected against the booking - never more than the total.
+  const amountToCollect = Number.isNaN(paymentAmount)
+    ? 0
+    : Math.min(paymentAmount, summary?.grandTotal ?? paymentAmount);
+  // Cash handed over beyond the total goes back to the devotee.
+  const cashChangeDue =
+    isCashPayment && summary && paymentAmountValid
+      ? Math.max(0, +(paymentAmount - summary.grandTotal).toFixed(2))
+      : 0;
 
   // ── customer search ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -2001,13 +2020,21 @@ export default function PosPortalPage() {
           customerId: selectedCustomer._id,
           lines: cart.map(toCartPayloadLine),
           paymentModeId: selectedPaymentModeId,
-          paidAmount: paymentAmount,
+          paidAmount: amountToCollect,
         },
       );
       const created = unwrap(orderRes);
 
       if (created.status === "confirmed") {
         setPaymentPopupOpen(false);
+        // Cash paid in full (or over): remember what was handed over so the
+        // success popup can show the change, or that none is owed. A partial
+        // cash payment has nothing to return, so shows nothing.
+        setCashChange(
+          isCashPayment && summary && paymentAmount >= summary.grandTotal - 0.005
+            ? { received: paymentAmount, change: cashChangeDue }
+            : null,
+        );
         finalizeBooking(created);
         return;
       }
@@ -2164,6 +2191,7 @@ export default function PosPortalPage() {
     setStep("cart");
     setConfirmation(null);
     setPaymentAmountInput("");
+    setCashChange(null);
     setPaymentPopupOpen(false);
     setPaynowQr(null);
     setNetsPayment(null);
@@ -2203,6 +2231,7 @@ export default function PosPortalPage() {
         bookingNumber: confirmation.bookingNumber,
         paymentStatus: confirmation.paymentStatus,
         mode: confirmation.paymentModeName,
+        cashChange,
       };
     }
 
@@ -2241,7 +2270,7 @@ export default function PosPortalPage() {
         customerName,
         lines,
         grandTotal: summary.grandTotal,
-        payingNow: Number.isNaN(paymentAmount) ? 0 : paymentAmount,
+        payingNow: amountToCollect,
         balanceDue: paymentBalanceAmount,
         mode: selectedModeName,
       };
@@ -2291,6 +2320,7 @@ export default function PosPortalPage() {
       >
         <BookingSuccessView
           confirmation={confirmation}
+          cashChange={cashChange}
           paymentModes={paymentModes}
           onNewTransaction={startNewTransaction}
           onDisplayState={setSuccessDisplay}
@@ -3005,6 +3035,8 @@ export default function PosPortalPage() {
         amountValid={paymentAmountValid}
         isPartial={isPartialPayment}
         balance={paymentBalanceAmount}
+        isCash={isCashPayment}
+        changeDue={cashChangeDue}
         modeName={selectedModeName}
         loading={bookingLoading}
         onConfirm={() => handleConfirmBooking()}
@@ -4201,6 +4233,8 @@ function ProceedPaymentModal({
   amountValid,
   isPartial,
   balance,
+  isCash,
+  changeDue,
   modeName,
   loading,
   onConfirm,
@@ -4217,6 +4251,10 @@ function ProceedPaymentModal({
   amountValid: boolean;
   isPartial: boolean;
   balance: number;
+  /** Cash only: the amount field is what was handed over, and may exceed the total. */
+  isCash: boolean;
+  /** Cash only: handed over minus the total, 0 when exact or short. */
+  changeDue: number;
   modeName: string;
   loading: boolean;
   onConfirm: () => void;
@@ -4284,17 +4322,19 @@ function ProceedPaymentModal({
 
         <DivineInput
           staticLabel
-          label="Payment Amount (S$)"
+          label={isCash ? "Cash Received (S$)" : "Payment Amount (S$)"}
           type="number"
           min={0}
-          max={total || undefined}
+          max={isCash ? undefined : total || undefined}
           step="0.01"
           inputMode="decimal"
           value={amountInput}
           onChange={(e) => onAmountChange(e.target.value)}
           error={
             amountInput !== "" && !amountValid
-              ? `Enter an amount between $0.00 and ${formatCurrency(total)}.`
+              ? isCash
+                ? "Enter the cash amount received."
+                : `Enter an amount between $0.00 and ${formatCurrency(total)}.`
               : undefined
           }
         />
@@ -4308,6 +4348,22 @@ function ProceedPaymentModal({
           <span>Balance Amount (after this payment)</span>
           <span className="font-semibold">{formatCurrency(balance)}</span>
         </div>
+        {isCash && amountValid && !isPartial && (
+          changeDue > 0.005 ? (
+            <div className="flex items-center justify-between rounded-xl border-2 border-[#e6b422] bg-gradient-to-r from-[#fff3c4] via-[#ffe38a] to-[#fff3c4] px-3 py-2.5 shadow-[0_8px_20px_-8px_rgba(230,180,34,0.6)]">
+              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#8a5a10]">
+                Balance to return
+              </span>
+              <span className="font-display text-[22px] font-black leading-none text-[#7c1527]">
+                {formatCurrency(changeDue)}
+              </span>
+            </div>
+          ) : (
+            <p className="rounded-lg bg-emerald-500/10 px-3 py-2 text-center text-[11.5px] font-semibold text-emerald-700">
+              Exact amount — no change to return.
+            </p>
+          )
+        )}
         {isPartial && (
           <p className="text-[10.5px] text-ink-500">
             Booking confirms now for the full order — collect the rest anytime
@@ -6582,6 +6638,7 @@ function UnavailableLinesDialog({
 
 function BookingSuccessView({
   confirmation,
+  cashChange,
   paymentModes,
   onNewTransaction,
   onPaymentRecorded,
@@ -6589,6 +6646,8 @@ function BookingSuccessView({
   onFullyPaid,
 }: {
   confirmation: BookingConfirmation;
+  /** Cash first payments only - see PosPortalPage's cashChange state. */
+  cashChange: PosCashChange | null;
   paymentModes: PaymentMode[];
   onNewTransaction: () => void;
   onPaymentRecorded: (result: RecordPaymentResult) => void;
@@ -6725,9 +6784,11 @@ function BookingSuccessView({
       bookingNumber: confirmation.bookingNumber,
       paymentStatus: confirmation.paymentStatus,
       paymentHistory,
+      cashChange: stillDue ? null : cashChange,
     });
   }, [
     onDisplayState,
+    cashChange,
     confirmation,
     payAgainQr,
     payAgainNets,
@@ -7124,6 +7185,14 @@ function BookingSuccessView({
           mode: p.mode,
           amount: formatCurrency(p.amount),
         }))}
+        cashChange={
+          cashChange && !stillDue
+            ? {
+                received: formatCurrency(cashChange.received),
+                change: cashChange.change > 0.005 ? formatCurrency(cashChange.change) : null,
+              }
+            : undefined
+        }
       />
       <PaymentRecordedModal
         open={!!paymentPopup}

@@ -127,6 +127,14 @@ export default function PosCustomerDisplayPage() {
         paymentMode={payload.mode ?? undefined}
         cta={donePartial ? "Continue" : "Thank You"}
         paymentHistory={payload.paymentHistory?.map((p) => ({ mode: p.mode, amount: formatCurrency(p.amount) }))}
+        cashChange={
+          payload.cashChange
+            ? {
+                received: formatCurrency(payload.cashChange.received),
+                change: payload.cashChange.change > 0.005 ? formatCurrency(payload.cashChange.change) : null,
+              }
+            : undefined
+        }
       />
       <div aria-hidden className="h-1.5 shrink-0 bg-dark-orange" />
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-gold-400/40 bg-gradient-to-r from-[#FFFCF7] via-[#FFF3DE] to-[#FFE9C7] px-4 py-3">
