@@ -58,6 +58,14 @@ import {
 import PosEventsSection, { type PosEvent } from "./PosEventsSection";
 import type { EventSelection } from "./PosEventBooking";
 import { formatEventSlot, type EventSlotInfo } from "../../lib/eventSlot";
+import {
+  holdEventSeats,
+  releaseEventHold,
+  releaseOrphanHolds,
+  seatsForEvent,
+  useEventHoldHeartbeat,
+  type HoldRefreshResult,
+} from "../../lib/eventHolds";
 import DivineInput from "../divine/DivineInput";
 import DivineButton from "../divine/DivineButton";
 import { StayOnPageWarning } from "../divine/StatusBanner";
@@ -382,6 +390,9 @@ type CartLine = {
   // are priced per booking, so quantity stays 1.
   event?: PosEvent;
   eventSlot?: CartEventSlot | null;
+  // The seats held for this line on the server (see lib/eventHolds.ts) - null
+  // for an event without slots, which has no seats to hold.
+  holdId?: string | null;
 };
 
 /** The one place a cart line is turned into the request shape the summary and order APIs take. */
@@ -393,7 +404,7 @@ function toCartPayloadLine(l: CartLine) {
     deities: l.deities,
     devotees: l.devotees,
     ...(l.refType === "GeneralItem" ? { manualUnitPrice: l.unitPrice } : {}),
-    ...(l.refType === "Event" ? { slotKey: l.eventSlot?.slotKey ?? null } : {}),
+    ...(l.refType === "Event" ? { slotKey: l.eventSlot?.slotKey ?? null, holdId: l.holdId ?? null } : {}),
   };
 }
 
@@ -1418,6 +1429,29 @@ export default function PosPortalPage() {
       if (!self) return false;
       selectCustomer(self);
     }
+    // Hold the seats FIRST. If the slot cannot take them the line is not added
+    // (or, when editing, the old hold and line stay exactly as they were).
+    const previous = lineId ? cart.find((l) => l.id === lineId) : undefined;
+    let holdId: string | null = null;
+    if (selection.slotKey) {
+      try {
+        const hold = await holdEventSeats("/pos/booking", {
+          eventId: event._id,
+          slotKey: selection.slotKey,
+          seats: seatsForEvent(event, selection.devotees.length),
+          replaceHoldId: previous?.holdId ?? null,
+        });
+        holdId = hold.holdId;
+        void loadEvents(); // the slot's counts now include this hold
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not hold the seats.");
+        void loadEvents(); // it was probably full - show the current numbers
+        return false;
+      }
+    } else if (previous?.holdId) {
+      await releaseEventHold("/pos/booking", previous.holdId);
+    }
+
     const eventSlot: CartEventSlot | null = selection.slot
       ? {
           slotKey: selection.slotKey ?? "",
@@ -1438,6 +1472,7 @@ export default function PosPortalPage() {
       devotees: selection.devotees,
       event,
       eventSlot,
+      holdId,
     };
     if (lineId) {
       // Drop the old line's priced fields so the cart shows the new price
@@ -1785,6 +1820,8 @@ export default function PosPortalPage() {
   }
 
   function removeCartLine(id: string) {
+    // An event line gives its held seats back the moment it leaves the cart.
+    void releaseEventHold("/pos/booking", cart.find((l) => l.id === id)?.holdId);
     setCart((prev) => prev.filter((l) => l.id !== id));
   }
 
@@ -1823,6 +1860,7 @@ export default function PosPortalPage() {
   }
 
   function clearCart() {
+    cart.forEach((l) => void releaseEventHold("/pos/booking", l.holdId));
     setCart([]);
     setSummary(null);
   }
@@ -1941,6 +1979,51 @@ export default function PosPortalPage() {
       }
     })();
   }
+
+  // The page has just loaded with an empty cart: let go of any seats the previous
+  // page in this tab (before a refresh) was still holding.
+  useEffect(() => {
+    void releaseOrphanHolds("/pos/booking").then(() => loadEvents());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Seats this cart already holds, per event and slot - lets a slot say "In your cart"
+  // instead of looking bookable while its last seat is already sitting in this cart.
+  const cartHoldsByEvent = useMemo(() => {
+    const byEvent: Record<string, Record<string, number>> = {};
+    for (const l of cart) {
+      if (l.refType !== "Event" || !l.eventSlot?.slotKey || !l.event) continue;
+      const slots = (byEvent[l.refId] ??= {});
+      slots[l.eventSlot.slotKey] = (slots[l.eventSlot.slotKey] ?? 0) + seatsForEvent(l.event, l.devotees.length);
+    }
+    return byEvent;
+  }, [cart]);
+
+  // Keep the cart's seat holds alive while it is open (and until the booking is confirmed).
+  useEventHoldHeartbeat(
+    "/pos/booking",
+    cart
+      .filter((l) => l.refType === "Event" && l.eventSlot?.slotKey && l.event)
+      .map((l) => ({
+        lineId: l.id,
+        holdId: l.holdId ?? null,
+        eventId: l.refId,
+        slotKey: l.eventSlot!.slotKey,
+        seats: seatsForEvent(l.event!, l.devotees.length),
+      })),
+    step === "cart" && !paymentPopupOpen,
+    (results: HoldRefreshResult[]) => {
+      results.forEach((r) => {
+        if (!r.ok) toast.error(r.message ?? "Seats held for an event in the cart could not be kept.");
+      });
+      setCart((prev) =>
+        prev.map((l) => {
+          const r = results.find((x) => x.lineId === l.id);
+          return r ? { ...l, holdId: r.ok ? r.holdId : null, quantityExceedsStock: r.ok ? l.quantityExceedsStock : true } : l;
+        }),
+      );
+    },
+  );
 
   const hasStockIssues = cart.some((l) => l.quantityExceedsStock);
   const canProceed =
@@ -2180,6 +2263,9 @@ export default function PosPortalPage() {
   }
 
   function startNewTransaction() {
+    // After a confirmed booking the holds are already booked seats (releasing
+    // them is a no-op); after an abandoned cart this gives the seats back.
+    cart.forEach((l) => void releaseEventHold("/pos/booking", l.holdId));
     clearCustomer();
     setCart([]);
     setSummary(null);
@@ -2795,6 +2881,8 @@ export default function PosPortalPage() {
                     onSubmitSelection={submitEventSelection}
                     editing={editingEventLine}
                     onCancelEdit={() => setEditingEventLine(null)}
+                    cartHolds={cartHoldsByEvent}
+                    onRefresh={loadEvents}
                   />
                 )}
               </div>

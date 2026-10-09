@@ -359,13 +359,28 @@ export function EditIconButton({ onClick, label = "Edit" }: { onClick: () => voi
   );
 }
 
-export function DeleteIconButton({ onClick, label = "Delete" }: { onClick: () => void; label?: string }) {
+export function DeleteIconButton({
+  onClick,
+  label = "Delete",
+  disabledReason,
+}: {
+  onClick: () => void;
+  label?: string;
+  /** When set the button is switched off and this is shown as its tooltip (why it cannot be used). */
+  disabledReason?: string;
+}) {
+  const disabled = Boolean(disabledReason);
   return (
     <button
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       aria-label={label}
-      title={label}
-      className="flex h-8 w-8 items-center justify-center text-red-600 transition-transform duration-200 hover:scale-110 hover:text-red-700 active:scale-95"
+      title={disabledReason ?? label}
+      className={`flex h-8 w-8 items-center justify-center transition-transform duration-200 ${
+        disabled
+          ? "cursor-not-allowed text-gray-300"
+          : "text-red-600 hover:scale-110 hover:text-red-700 active:scale-95"
+      }`}
     >
       <TrashIcon className="h-[19px] w-[19px]" />
     </button>

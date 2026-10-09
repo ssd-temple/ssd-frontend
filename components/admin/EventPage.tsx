@@ -23,7 +23,7 @@ import DivineMasterImageUpload from "../divine/DivineMasterImageUpload";
 import TamilNameField from "./TamilNameField";
 import { withOptionalImages } from "../../lib/withOptionalImage";
 import { PlusIcon, CalendarIcon, CloseIcon } from "../divine/icons";
-import { formatTempleDate, parseISODateString } from "../../lib/datetime";
+import { formatHHMMDisplay, formatTempleDate, parseISODateString } from "../../lib/datetime";
 import { api, unwrap, type ApiEnvelope } from "../../lib/api";
 import { useApiResource } from "../../lib/useApiResource";
 import { MODULES, usePermissions } from "../../lib/permissions";
@@ -59,8 +59,12 @@ export type Event = {
     endTime: string;
     totalSeats: number;
     bookedSeats?: number;
+    heldSeats?: number;
     status: number;
   }[];
+  /** Set by the server: at least one slot has a confirmed booking. Such an event cannot be deleted or made inactive, and its booked slots are locked. */
+  hasBookings?: boolean;
+  hasHeldSeats?: boolean;
   salePrice: number;
   gstClassification: string;
   displayOrder: number;
@@ -96,6 +100,10 @@ const slotDetailSchema = z.object({
   endTime: z.string().min(1, "Required"),
   totalSeats: z.number().int().min(0),
   bookedSeats: z.number().int().min(0),
+  heldSeats: z.number().int().min(0),
+  // The seat limit the slot had when the form was opened - a slot with
+  // bookings may only go up from here.
+  minSeats: z.number().int().min(0),
   status: z.number(),
 });
 
@@ -154,6 +162,23 @@ const schema = z
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: "End date cannot be before the start date", path: ["endDate"] });
       }
     }
+
+    data.slotDetails.forEach((slot, i) => {
+      const used = slot.bookedSeats + slot.heldSeats;
+      if (slot.totalSeats > 0 && slot.totalSeats < used) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${used} seat(s) booked or held`,
+          path: ["slotDetails", i, "totalSeats"],
+        });
+      } else if (slot.bookedSeats > 0 && slot.minSeats > 0 && slot.totalSeats > 0 && slot.totalSeats < slot.minSeats) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Can only be increased (now ${slot.minSeats})`,
+          path: ["slotDetails", i, "totalSeats"],
+        });
+      }
+    });
 
     if (data.isSlotRequired) {
       if (data.slotDetails.length === 0) {
@@ -299,6 +324,8 @@ export default function EventPage() {
         endTime: s.endTime,
         totalSeats: s.totalSeats,
         bookedSeats: s.bookedSeats ?? 0,
+        heldSeats: s.heldSeats ?? 0,
+        minSeats: s.totalSeats,
         status: s.status,
       })),
       salePrice: event.salePrice,
@@ -325,7 +352,8 @@ export default function EventPage() {
         endDate: effectiveRange(values).end,
         eventDates: values.dateType === "MULTIPLE" ? [...values.eventDates].sort() : values.dateType === "SINGLE" ? [values.startDate] : [],
         maxFamilyMembers: values.isFamilyMembersRequired ? values.maxFamilyMembers : 2,
-        slotDetails: values.isSlotRequired ? values.slotDetails : [],
+        // minSeats is only the form's own memory of the original limit - the server does not take it.
+        slotDetails: values.isSlotRequired ? values.slotDetails.map(({ minSeats: _minSeats, ...slot }) => slot) : [],
       },
       [
         { fieldName: "image", file: editing ? editImage : createImage, existingValue: editing?.image ?? null, removed: imageRemoved },
@@ -359,7 +387,14 @@ export default function EventPage() {
       ),
     },
     { key: "status", label: "Status", render: (e) => (
-      <StatusToggleCell status={e.status} canEdit={canEdit} onChange={(status) => patchMasterStatus(update, e._id, status, "Event")} />
+      <span title={e.hasBookings ? "This event has bookings, so it cannot be made inactive." : undefined}>
+        <StatusToggleCell
+          status={e.status}
+          canEdit={canEdit}
+          disabled={e.hasBookings}
+          onChange={(status) => patchMasterStatus(update, e._id, status, "Event")}
+        />
+      </span>
     ) },
   ];
 
@@ -407,7 +442,18 @@ export default function EventPage() {
         rowActions={(e) => (
           <div className="flex justify-end gap-2">
             {canEdit && <EditIconButton onClick={() => openEdit(e)} />}
-            {canCreate && <DeleteIconButton onClick={() => setDeleting(e)} />}
+            {canCreate && (
+              <DeleteIconButton
+                onClick={() => setDeleting(e)}
+                disabledReason={
+                  e.hasBookings
+                    ? "This event has bookings, so it cannot be deleted."
+                    : e.hasHeldSeats
+                      ? "Seats on this event are being held by open carts right now."
+                      : undefined
+                }
+              />
+            )}
           </div>
         )}
       />
@@ -710,7 +756,7 @@ export default function EventPage() {
               control={control}
               name="status"
               render={({ field }) => (
-                <DivineStatusSelect value={field.value} onChange={field.onChange} />
+                <DivineStatusSelect value={field.value} onChange={field.onChange} disabled={Boolean(editing?.hasBookings)} />
               )}
             />
           </div>
@@ -746,11 +792,16 @@ export default function EventPage() {
                     SLOT DETAILS
                   </p>
                   <p className="mt-1 text-[11.5px] text-ink-500">Slot date must be between Event Start Date and End Date.</p>
+                  {editing?.hasBookings && (
+                    <p className="mt-1 text-[11.5px] font-medium text-amber-700">
+                      Slots with bookings are locked - only their number of seats can be increased.
+                    </p>
+                  )}
                 </div>
                 <button
                   type="button"
                   onClick={() =>
-                    appendSlot({ slotName: "", date: "", startTime: "", endTime: "", totalSeats: 0, bookedSeats: 0, status: 1 })
+                    appendSlot({ slotName: "", date: "", startTime: "", endTime: "", totalSeats: 0, bookedSeats: 0, heldSeats: 0, minSeats: 0, status: 1 })
                   }
                   className="flex shrink-0 items-center gap-1.5 rounded-lg border border-orange-300 bg-white px-2.5 py-1.5 text-[12px] font-medium text-orange-600 transition-colors hover:bg-orange-50"
                 >
@@ -774,44 +825,88 @@ export default function EventPage() {
 
               <div className="divide-y divide-gray-100">
                 {slotFields.length === 0 && <p className="px-4 py-3 text-[12.5px] text-ink-500">No slots yet.</p>}
-                {slotFields.map((row, index) => (
+                {slotFields.map((row, index) => {
+                  // A slot with a confirmed booking is frozen: only its seat limit can go up.
+                  const booked = watch(`slotDetails.${index}.bookedSeats`) ?? 0;
+                  const held = watch(`slotDetails.${index}.heldSeats`) ?? 0;
+                  const locked = booked > 0;
+                  const lockedField =
+                    "h-10 w-full cursor-not-allowed rounded-lg border border-gray-200 bg-gray-100 px-3 text-[13.5px] text-ink-500 outline-none";
+                  const slotError = (errors.slotDetails as { totalSeats?: { message?: string } }[] | undefined)?.[index]?.totalSeats?.message;
+                  return (
                   <div
                     key={row.id}
                     className="grid min-w-0 grid-cols-1 items-start gap-2 px-4 py-3 sm:grid-cols-2 lg:min-w-[72rem] lg:grid-cols-[minmax(10rem,1.4fr)_10.5rem_11rem_11rem_7rem_6rem_9rem_2.75rem]"
                   >
                     <input
                       placeholder="Slot Name"
+                      readOnly={locked}
+                      title={locked ? "This slot has bookings, so its name cannot be changed." : undefined}
                       {...register(`slotDetails.${index}.slotName`)}
-                      className="h-10 w-full rounded-lg border border-[#f0b4a0] bg-white px-3 text-[13.5px] text-ink-100 outline-none transition-colors hover:border-[#e8a090] focus:border-[#e8590c] sm:col-span-2 lg:col-span-1"
+                      className={
+                        locked
+                          ? `${lockedField} sm:col-span-2 lg:col-span-1`
+                          : "h-10 w-full rounded-lg border border-[#f0b4a0] bg-white px-3 text-[13.5px] text-ink-100 outline-none transition-colors hover:border-[#e8a090] focus:border-[#e8590c] sm:col-span-2 lg:col-span-1"
+                      }
                     />
                     <input
                       type="date"
                       min={startDate || undefined}
                       max={endDate || undefined}
+                      readOnly={locked}
+                      title={locked ? "This slot has bookings, so its date cannot be changed." : undefined}
                       {...register(`slotDetails.${index}.date`)}
-                      className="h-10 w-full rounded-lg border border-[#f0b4a0] bg-white px-3 text-[13.5px] text-ink-100 outline-none transition-colors hover:border-[#e8a090] focus:border-[#e8590c]"
+                      className={
+                        locked
+                          ? lockedField
+                          : "h-10 w-full rounded-lg border border-[#f0b4a0] bg-white px-3 text-[13.5px] text-ink-100 outline-none transition-colors hover:border-[#e8a090] focus:border-[#e8590c]"
+                      }
                     />
                     <Controller
                       control={control}
                       name={`slotDetails.${index}.startTime`}
-                      render={({ field }) => <DivineTimePicker label="Start Time" compact value={field.value} onChange={field.onChange} />}
+                      render={({ field }) =>
+                        locked ? (
+                          <div title="This slot has bookings, so its time cannot be changed." className={`${lockedField} flex items-center`}>
+                            {formatHHMMDisplay(field.value)}
+                          </div>
+                        ) : (
+                          <DivineTimePicker label="Start Time" compact value={field.value} onChange={field.onChange} />
+                        )
+                      }
                     />
                     <Controller
                       control={control}
                       name={`slotDetails.${index}.endTime`}
-                      render={({ field }) => <DivineTimePicker label="End Time" compact value={field.value} onChange={field.onChange} />}
+                      render={({ field }) =>
+                        locked ? (
+                          <div title="This slot has bookings, so its time cannot be changed." className={`${lockedField} flex items-center`}>
+                            {formatHHMMDisplay(field.value)}
+                          </div>
+                        ) : (
+                          <DivineTimePicker label="End Time" compact value={field.value} onChange={field.onChange} />
+                        )
+                      }
                     />
-                    <input
-                      type="number"
-                      {...register(`slotDetails.${index}.totalSeats`, { valueAsNumber: true })}
-                      className="h-10 w-full rounded-lg border border-[#f0b4a0] bg-white px-3 text-[13.5px] text-ink-100 outline-none transition-colors hover:border-[#e8a090] focus:border-[#e8590c]"
-                    />
+                    <div>
+                      <input
+                        type="number"
+                        min={locked ? watch(`slotDetails.${index}.minSeats`) : Math.max(0, booked + held)}
+                        title={locked ? "Seats can only be increased on a slot that has bookings." : undefined}
+                        {...register(`slotDetails.${index}.totalSeats`, { valueAsNumber: true })}
+                        className={`h-10 w-full rounded-lg border bg-white px-3 text-[13.5px] text-ink-100 outline-none transition-colors hover:border-[#e8a090] focus:border-[#e8590c] ${
+                          slotError ? "border-crimson-500" : "border-[#f0b4a0]"
+                        }`}
+                      />
+                      {slotError && <p className="mt-1 text-[11px] leading-tight text-crimson-500">{slotError}</p>}
+                    </div>
                     <div
-                      title="Seats already booked for this slot"
+                      title={`${booked} booked${held > 0 ? `, ${held} held by open carts` : ""}`}
                       className="flex h-10 items-center rounded-lg border border-[#f0b4a0] bg-gray-50 px-3 text-[13.5px] tabular-nums text-ink-100"
                     >
-                      {watch(`slotDetails.${index}.bookedSeats`) ?? 0}
+                      {booked}
                       <span className="ml-1 text-ink-500">/ {watch(`slotDetails.${index}.totalSeats`) || 0}</span>
+                      {held > 0 && <span className="ml-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" aria-label={`${held} seats held`} />}
                     </div>
                     <Controller
                       control={control}
@@ -823,20 +918,28 @@ export default function EventPage() {
                           options={SLOT_STATUS_OPTIONS}
                           formChrome
                           clearable={false}
+                          disabled={locked}
                         />
                       )}
                     />
                     <button
                       type="button"
                       onClick={() => removeSlot(index)}
+                      disabled={locked || held > 0}
                       aria-label="Remove slot"
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-crimson-500/10 text-crimson-500 transition-colors hover:bg-crimson-500/20 lg:justify-self-start"
+                      title={locked ? "This slot has bookings, so it cannot be removed." : held > 0 ? "Seats on this slot are held by open carts." : "Remove slot"}
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors lg:justify-self-start ${
+                        locked || held > 0
+                          ? "cursor-not-allowed bg-gray-100 text-gray-300"
+                          : "bg-crimson-500/10 text-crimson-500 hover:bg-crimson-500/20"
+                      }`}
                     >
                       <CloseIcon className="h-4 w-4" />
                       <span className="sr-only">Remove slot</span>
                     </button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
               </div>
               {errors.slotDetails?.message && (

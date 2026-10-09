@@ -15,6 +15,8 @@ export type PosEventSlot = {
   endTime: string;
   totalSeats: number;
   bookedSeats?: number;
+  /** Seats temporarily held by open carts - taken off the free seats until they are booked or let go. */
+  heldSeats?: number;
 };
 
 export type PosEvent = {
@@ -277,9 +279,15 @@ export default function PosEventsSection({
   onSubmitSelection,
   editing,
   onCancelEdit,
+  cartHolds,
+  onRefresh,
 }: {
   events: PosEvent[];
   nakshatraOptions: ListboxOption[];
+  /** Seats this cart already holds, per event and slot (eventId -> slotKey -> seats). */
+  cartHolds?: Record<string, Record<string, number>>;
+  /** Re-reads the events list so seat counts are current (called when a card is opened). */
+  onRefresh?: () => void;
   /** Adds a cart line, or - when lineId is set - updates the one being edited. */
   onSubmitSelection: (event: PosEvent, selection: EventSelection, lineId: string | null) => boolean | Promise<boolean>;
   /** Set when a cart line's Edit button was pressed: the flow opens on that event, pre-filled. */
@@ -287,14 +295,18 @@ export default function PosEventsSection({
   onCancelEdit: () => void;
 }) {
   const today = toISODateString(new Date());
-  const [selected, setSelected] = useState<PosEvent | null>(null);
+  // Kept as an id and looked up in the live list, so a refresh while the booking
+  // flow is open shows the current seat counts.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = events.find((e) => e._id === selectedId) ?? null;
 
   if (editing) {
     return (
       <PosEventBooking
         key={editing.lineId}
-        event={editing.event}
+        event={events.find((e) => e._id === editing.event._id) ?? editing.event}
         initial={editing.selection}
+        cartHolds={cartHolds?.[editing.event._id]}
         nakshatraOptions={nakshatraOptions}
         onBack={onCancelEdit}
         onSubmit={(selection) => void onSubmitSelection(editing.event, selection, editing.lineId)}
@@ -307,10 +319,11 @@ export default function PosEventsSection({
       <PosEventBooking
         event={selected}
         nakshatraOptions={nakshatraOptions}
-        onBack={() => setSelected(null)}
+        cartHolds={cartHolds?.[selected._id]}
+        onBack={() => setSelectedId(null)}
         onSubmit={async (selection) => {
           // Stay in the flow if the line could not be added (e.g. no customer could be resolved).
-          if (await onSubmitSelection(selected, selection, null)) setSelected(null);
+          if (await onSubmitSelection(selected, selection, null)) setSelectedId(null);
         }}
       />
     );
@@ -319,7 +332,16 @@ export default function PosEventsSection({
   return (
     <div className="grid min-h-0 flex-1 auto-rows-max grid-cols-1 content-start gap-4 overflow-y-auto pb-2 pr-1 2xl:grid-cols-2">
       {events.map((event, i) => (
-        <EventCard key={event._id} event={event} today={today} index={i} onSelect={setSelected} />
+        <EventCard
+          key={event._id}
+          event={event}
+          today={today}
+          index={i}
+          onSelect={(e) => {
+            onRefresh?.(); // seat counts may have moved since the list was loaded
+            setSelectedId(e._id);
+          }}
+        />
       ))}
     </div>
   );

@@ -31,13 +31,27 @@ const dayLabel = (v: string) => {
   return d ? d.toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short" }) : "";
 };
 
-function seatState(slot: PosEventSlot) {
+/**
+ * Seats still free on a slot: total minus booked minus held by carts. `own`
+ * is what THIS cart line already holds on the slot (when it is being edited) -
+ * those seats are still available to the line itself.
+ */
+function seatState(slot: PosEventSlot, own = 0) {
   const total = slot.totalSeats;
   const booked = slot.bookedSeats ?? 0;
-  if (!total) return { left: null as number | null, pct: 0, tone: "bg-emerald-500", full: false };
-  const left = Math.max(0, total - booked);
-  const pct = Math.min(100, Math.round((booked / total) * 100));
-  return { left, pct, tone: pct >= 90 ? "bg-rose-500" : pct >= 60 ? "bg-amber-500" : "bg-emerald-500", full: left === 0 };
+  const used = Math.max(0, booked + (slot.heldSeats ?? 0) - own);
+  if (!total) return { left: null as number | null, pct: 0, tone: "bg-emerald-500", full: false, fullyBooked: false, total: 0 };
+  const left = Math.max(0, total - used);
+  const pct = Math.min(100, Math.round((used / total) * 100));
+  return {
+    left,
+    pct,
+    tone: pct >= 90 ? "bg-rose-500" : pct >= 60 ? "bg-amber-500" : "bg-emerald-500",
+    full: left === 0,
+    // Every seat is actually BOOKED (not just held by carts that may still let go).
+    fullyBooked: booked >= total,
+    total,
+  };
 }
 
 const PRIMARY_BTN =
@@ -74,9 +88,12 @@ export default function PosEventBooking({
   onBack,
   initial,
   onSubmit,
+  cartHolds,
 }: {
   event: PosEvent;
   nakshatraOptions: ListboxOption[];
+  /** Seats THIS cart already holds on each slot of the event (slotKey -> seats), so a slot can say "In your cart". */
+  cartHolds?: Record<string, number>;
   /** Leave the flow without saving (back to the event list). */
   onBack: () => void;
   /** Set when an existing cart line is being edited - the flow opens pre-filled. */
@@ -85,6 +102,8 @@ export default function PosEventBooking({
   onSubmit: (selection: EventSelection) => void;
 }) {
   const isEditing = Boolean(initial);
+  // Seats the cart line being edited already holds - still free to it.
+  const ownSeats = initial ? (event.isFamilyMembersRequired ? Math.max(1, initial.devotees.length) : 1) : 0;
   const steps = useMemo(() => {
     const list: { key: StepKey; label: string }[] = [{ key: "slot", label: event.isSlotRequired ? "Slot" : "Details" }];
     if (event.deityMapping.length > 0) list.push({ key: "deity", label: "Deities" });
@@ -381,8 +400,16 @@ export default function PosEventBooking({
                     <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(230px,1fr))]">
                       {slots.map((slot, i) => {
                         if (slotDates.length > 1 && iso(slot.date) !== slotDate) return null;
-                        const st = seatState(slot);
+                        const key = slotKeyOf(slot);
+                        const isOwnSlot = ownSeats > 0 && key === initial?.slotKey;
+                        const st = seatState(slot, isOwnSlot ? ownSeats : 0);
+                        // Seats other lines of this same cart already hold here (the line being edited is not "another line").
+                        const mine = Math.max(0, (cartHolds?.[key] ?? 0) - (isOwnSlot ? ownSeats : 0));
                         const active = slotIndex === i;
+                        // What the card says when no seat can be added:
+                        const inMyCart = st.full && mine > 0 && !st.fullyBooked; // every free seat is in this very cart
+                        const fullyBooked = st.full && st.fullyBooked;
+                        const onHold = st.full && !st.fullyBooked && !inMyCart; // taken, but only by carts that may let go
                         return (
                           <motion.button
                             key={`${slot.slotName}-${slot.date}-${i}`}
@@ -392,42 +419,103 @@ export default function PosEventBooking({
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.15 + i * 0.06 }}
-                            whileHover={{ y: -3 }}
-                            whileTap={{ scale: 0.97 }}
+                            whileHover={st.full ? undefined : { y: -3 }}
+                            whileTap={st.full ? undefined : { scale: 0.97 }}
                             className={`relative flex items-center gap-3 overflow-hidden rounded-2xl border px-3.5 py-3 text-left transition-[box-shadow,border-color,background-color] duration-200 ${
-                              active
-                                ? "border-[#7c1527] bg-gradient-to-br from-[#fff1c9] via-[#fff9e6] to-white shadow-[0_14px_26px_-12px_rgba(124,21,39,0.8)]"
-                                : "border-[#e8d2a6] bg-white hover:border-[#c1851a] hover:shadow-[0_12px_22px_-14px_rgba(184,134,11,0.9)]"
-                            } ${st.full ? "cursor-not-allowed opacity-50" : ""}`}
+                              fullyBooked
+                                ? "cursor-not-allowed border-rose-300 bg-gradient-to-br from-rose-50 to-white"
+                                : onHold
+                                  ? "cursor-not-allowed border-amber-300 bg-gradient-to-br from-amber-50 to-white"
+                                  : inMyCart
+                                    ? "cursor-not-allowed border-emerald-400 bg-gradient-to-br from-emerald-50 to-white"
+                                    : active
+                                      ? "border-[#7c1527] bg-gradient-to-br from-[#fff1c9] via-[#fff9e6] to-white shadow-[0_14px_26px_-12px_rgba(124,21,39,0.8)]"
+                                      : "border-[#e8d2a6] bg-white hover:border-[#c1851a] hover:shadow-[0_12px_22px_-14px_rgba(184,134,11,0.9)]"
+                            }`}
                           >
                             <span
                               className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ring-2 transition-colors ${
-                                active ? "bg-[#7c1527] text-white ring-[#f2c14e]" : "bg-[#fff1c9] text-[#b8860b] ring-[#e8d2a6]"
+                                fullyBooked
+                                  ? "bg-rose-100 text-rose-500 ring-rose-200"
+                                  : onHold
+                                    ? "bg-amber-100 text-amber-600 ring-amber-200"
+                                    : inMyCart
+                                      ? "bg-emerald-500 text-white ring-emerald-200"
+                                      : active
+                                        ? "bg-[#7c1527] text-white ring-[#f2c14e]"
+                                        : "bg-[#fff1c9] text-[#b8860b] ring-[#e8d2a6]"
                               }`}
                             >
-                              <ClockIcon className="h-5 w-5" />
+                              {fullyBooked ? (
+                                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="9" />
+                                  <path d="M5.6 5.6l12.8 12.8" />
+                                </svg>
+                              ) : inMyCart ? (
+                                <CheckIcon className="h-5 w-5" />
+                              ) : (
+                                <ClockIcon className="h-5 w-5" />
+                              )}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-[14px] font-bold text-[#3d1a24]">{slot.slotName}</span>
+                              <span className={`block truncate text-[14px] font-bold ${fullyBooked ? "text-[#7a5a5f]" : "text-[#3d1a24]"}`}>{slot.slotName}</span>
                               <span className="block text-[12px] tabular-nums text-[#5d6479]">
                                 {dayLabel(slot.date)} · {formatHHMMDisplay(slot.startTime)} – {formatHHMMDisplay(slot.endTime)}
                               </span>
-                              <span className="mt-1.5 flex items-center gap-2">
-                                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-black/10">
-                                  <motion.span
-                                    className={`block h-full rounded-full ${st.tone}`}
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${st.pct}%` }}
-                                    transition={{ duration: 0.7, delay: 0.25 }}
-                                  />
+                              {fullyBooked ? (
+                                <span className="mt-1.5 flex items-center gap-2">
+                                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-rose-100">
+                                    <span className="block h-full w-full rounded-full bg-rose-400" />
+                                  </span>
+                                  <span className="text-[11.5px] font-bold tabular-nums text-rose-600">All {st.total} booked</span>
                                 </span>
-                                <span className="text-[11.5px] font-bold tabular-nums text-[#5d6479]">
-                                  {st.left === null ? "Open" : st.full ? "Full" : `${st.left} left`}
+                              ) : inMyCart ? (
+                                <span className="mt-1.5 block text-[11.5px] font-semibold text-emerald-700">
+                                  In your cart · {mine} seat{mine === 1 ? "" : "s"}. Edit it from the cart to change.
                                 </span>
-                              </span>
+                              ) : onHold ? (
+                                <span className="mt-1.5 block text-[11.5px] font-semibold text-amber-700">
+                                  Held in other carts - may free up shortly.
+                                </span>
+                              ) : (
+                                <span className="mt-1.5 flex items-center gap-2">
+                                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-black/10">
+                                    <motion.span
+                                      className={`block h-full rounded-full ${st.tone}`}
+                                      initial={{ width: 0 }}
+                                      animate={{ width: `${st.pct}%` }}
+                                      transition={{ duration: 0.7, delay: 0.25 }}
+                                    />
+                                  </span>
+                                  <span className="text-[11.5px] font-bold tabular-nums text-[#5d6479]">
+                                    {st.left === null ? "Open" : `${st.left} left`}
+                                  </span>
+                                  {mine > 0 && (
+                                    <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10.5px] font-bold text-emerald-700">
+                                      {mine} in your cart
+                                    </span>
+                                  )}
+                                </span>
+                              )}
                             </span>
+                            {fullyBooked && (
+                              <span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute right-2 top-2 -rotate-6 rounded-md border-2 border-rose-500/80 bg-white/80 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.16em] text-rose-600"
+                              >
+                                Fully booked
+                              </span>
+                            )}
+                            {onHold && (
+                              <span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute right-2 top-2 -rotate-6 rounded-md border-2 border-amber-500/80 bg-white/80 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.16em] text-amber-600"
+                              >
+                                On hold
+                              </span>
+                            )}
                             <AnimatePresence>
-                              {active && (
+                              {active && !st.full && (
                                 <motion.span
                                   initial={{ scale: 0, rotate: -40 }}
                                   animate={{ scale: 1, rotate: 0 }}

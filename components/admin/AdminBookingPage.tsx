@@ -45,6 +45,14 @@ import PosEventsSection, { type PosEvent } from "../pos/PosEventsSection";
 import type { EventSelection } from "../pos/PosEventBooking";
 import { formatEventSlot, type EventSlotInfo } from "../../lib/eventSlot";
 import {
+  holdEventSeats,
+  releaseEventHold,
+  releaseOrphanHolds,
+  seatsForEvent,
+  useEventHoldHeartbeat,
+  type HoldRefreshResult,
+} from "../../lib/eventHolds";
+import {
   SearchIcon,
   TrashIcon,
   CartIcon,
@@ -131,6 +139,8 @@ type CartLine = {
   // Event lines only: the slot booked, and the event itself (for its deity names).
   eventSlot?: (EventSlotInfo & { slotKey: string }) | null;
   event?: PosEvent;
+  // The seats held for this line on the server (see lib/eventHolds.ts).
+  holdId?: string | null;
 };
 
 /** The one place a cart line becomes the request shape the summary and order APIs take. */
@@ -142,7 +152,7 @@ function toCartPayloadLine(l: CartLine) {
     deities: l.deities,
     devotees: l.devotees,
     ...(l.refType === "GeneralItem" ? { manualUnitPrice: l.unitPrice } : {}),
-    ...(l.refType === "Event" ? { slotKey: l.eventSlot?.slotKey ?? null } : {}),
+    ...(l.refType === "Event" ? { slotKey: l.eventSlot?.slotKey ?? null, holdId: l.holdId ?? null } : {}),
   };
 }
 
@@ -465,6 +475,8 @@ export default function AdminBookingPage() {
   }
 
   function clearCustomer() {
+    // Changing the customer empties the cart - give any held event seats back first.
+    cart.forEach((l) => void releaseEventHold("/pos/admin/booking", l.holdId));
     setSelectedCustomer(null);
     setCustomerQuery("");
     setCustomerResults([]);
@@ -611,23 +623,88 @@ export default function AdminBookingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedItemId, selectedServiceId, selectedGeneralItemId]);
 
+  // Keep the cart's seat holds alive while it is open.
+  useEventHoldHeartbeat(
+    "/pos/admin/booking",
+    cart
+      .filter((l) => l.refType === "Event" && l.eventSlot?.slotKey && l.event)
+      .map((l) => ({
+        lineId: l.id,
+        holdId: l.holdId ?? null,
+        eventId: l.refId,
+        slotKey: l.eventSlot!.slotKey,
+        seats: seatsForEvent(l.event!, l.devotees.length),
+      })),
+    step === "cart",
+    (results: HoldRefreshResult[]) => {
+      results.forEach((r) => {
+        if (!r.ok) toast.error(r.message ?? "Seats held for an event in the cart could not be kept.");
+      });
+      setCart((prev) =>
+        prev.map((l) => {
+          const r = results.find((x) => x.lineId === l.id);
+          return r ? { ...l, holdId: r.ok ? r.holdId : null, quantityExceedsStock: r.ok ? l.quantityExceedsStock : true } : l;
+        })
+      );
+    }
+  );
+
   // ─── events ───────────────────────────────────────────────────────────────
   // Live and upcoming events, fetched the first time the Event tab is opened.
+  async function loadEvents() {
+    try {
+      const r = await api.get<ApiEnvelope<{ items: PosEvent[] }>>("/pos/admin/booking/events");
+      setEvents(unwrap(r).items);
+    } catch (err) {
+      toast.error(extractErrorMessage(err));
+    }
+  }
+
   useEffect(() => {
-    if (refType !== "Event" || events.length > 0) return;
-    api
-      .get<ApiEnvelope<{ items: PosEvent[] }>>("/pos/admin/booking/events")
-      .then((r) => setEvents(unwrap(r).items))
-      .catch((err) => toast.error(extractErrorMessage(err)));
+    if (refType === "Event") void loadEvents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refType]);
 
-  function addEventToCart(event: PosEvent, selection: EventSelection): boolean {
+  // The page has just loaded with an empty cart: let go of any seats the previous
+  // page in this tab (before a refresh) was still holding.
+  useEffect(() => {
+    void releaseOrphanHolds("/pos/admin/booking");
+  }, []);
+
+  // Seats this cart already holds, per event and slot - lets a slot say "In your cart".
+  const cartHoldsByEvent = useMemo(() => {
+    const byEvent: Record<string, Record<string, number>> = {};
+    for (const l of cart) {
+      if (l.refType !== "Event" || !l.eventSlot?.slotKey || !l.event) continue;
+      const slots = (byEvent[l.refId] ??= {});
+      slots[l.eventSlot.slotKey] = (slots[l.eventSlot.slotKey] ?? 0) + seatsForEvent(l.event, l.devotees.length);
+    }
+    return byEvent;
+  }, [cart]);
+
+  async function addEventToCart(event: PosEvent, selection: EventSelection): Promise<boolean> {
     if (!selectedCustomer) {
       toast.error("Please select a customer first.");
       return false;
     }
     const slot = selection.slot;
+    // Hold the seats first - the line is only added when the slot can take them.
+    let holdId: string | null = null;
+    if (selection.slotKey) {
+      try {
+        const hold = await holdEventSeats("/pos/admin/booking", {
+          eventId: event._id,
+          slotKey: selection.slotKey,
+          seats: seatsForEvent(event, selection.devotees.length),
+        });
+        holdId = hold.holdId;
+        void loadEvents(); // the slot's counts now include this hold
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not hold the seats.");
+        void loadEvents();
+        return false;
+      }
+    }
     setCart((prev) => [
       ...prev,
       {
@@ -641,6 +718,7 @@ export default function AdminBookingPage() {
         deities: selection.deityIds,
         devotees: selection.devotees,
         event,
+        holdId,
         eventSlot: slot
           ? {
               slotKey: selection.slotKey ?? "",
@@ -718,10 +796,13 @@ export default function AdminBookingPage() {
   }
 
   function removeCartLine(id: string) {
+    // An event line gives its held seats back the moment it leaves the cart.
+    void releaseEventHold("/pos/admin/booking", cart.find((l) => l.id === id)?.holdId);
     setCart((prev) => prev.filter((l) => l.id !== id));
   }
 
   function clearCart() {
+    cart.forEach((l) => void releaseEventHold("/pos/admin/booking", l.holdId));
     setCart([]);
     setSummary(null);
     setStep("cart");
@@ -947,6 +1028,8 @@ export default function AdminBookingPage() {
                     onSubmitSelection={(event, selection) => addEventToCart(event, selection)}
                     editing={null}
                     onCancelEdit={() => {}}
+                    cartHolds={cartHoldsByEvent}
+                    onRefresh={loadEvents}
                   />
                 )}
               </div>
