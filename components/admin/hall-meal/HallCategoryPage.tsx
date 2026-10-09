@@ -202,9 +202,10 @@ export default function HallCategoryPage() {
         }
       >
         <form id="hall-category-form" onSubmit={submit} noValidate className="space-y-5">
-          <DivineInput staticLabel label="Category Name" error={errors.name?.message} {...register("name")} />
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
+          <DivineInput staticLabel label="Category Name" required error={errors.name?.message} {...register("name")} />
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Category Code" error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Category Code" required error={errors.code?.message} {...register("code")} />
             <Controller
               control={control}
               name="status"

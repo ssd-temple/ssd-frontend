@@ -9,6 +9,8 @@ import { FORM_CONTROL_ERROR, FORM_CONTROL_FOCUS, FORM_CONTROL_SHELL, FORM_LABEL,
 
 type DivineMultiSelectProps = {
   label: string;
+  /** Red asterisk after the label. Does not change validation. */
+  required?: boolean;
   values: string[];
   onChange: (values: string[]) => void;
   options: ListboxOption[];
@@ -50,6 +52,7 @@ const SEARCH_THRESHOLD = 7;
  */
 export default function DivineMultiSelect({
   label,
+  required = false,
   values,
   onChange,
   options,
@@ -138,6 +141,7 @@ export default function DivineMultiSelect({
     <div className="relative w-full">
       <label id={labelId} className={FORM_LABEL}>
         {label}
+        {required && <span className="text-crimson-500"> *</span>}
       </label>
       <button
         ref={triggerRef}

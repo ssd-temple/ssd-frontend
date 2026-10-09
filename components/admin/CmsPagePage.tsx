@@ -279,9 +279,11 @@ export default function CmsPagePage() {
         }
       >
         <form id="cms-page-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-2 gap-4">
             <DivineInput
               staticLabel
+              required
               label="Title"
               error={errors.title?.message}
               {...titleField}

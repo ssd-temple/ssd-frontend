@@ -217,9 +217,10 @@ export default function FoodMenuItemPage() {
         }
       >
         <form id="food-menu-item-form" onSubmit={submit} noValidate className="space-y-5">
-          <DivineInput staticLabel label="Menu Item Name" error={errors.name?.message} {...register("name")} />
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
+          <DivineInput staticLabel label="Menu Item Name" required error={errors.name?.message} {...register("name")} />
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Item Category" error={errors.itemCategory?.message} {...register("itemCategory")} />
+            <DivineInput staticLabel label="Item Category" required error={errors.itemCategory?.message} {...register("itemCategory")} />
             <Controller
               control={control}
               name="status"

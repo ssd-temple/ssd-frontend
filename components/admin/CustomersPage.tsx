@@ -356,9 +356,10 @@ export default function CustomersPage() {
         }
       >
         <form id="customer-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <DivineInput staticLabel label="Full name" icon={<UserIcon />} error={errors.name?.message} {...register("name")} />
-            <DivineInput staticLabel label="Email address" type="email" icon={<MailIcon />} error={errors.email?.message} {...register("email")} />
+            <DivineInput staticLabel label="Full name" required icon={<UserIcon />} error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Email address" required type="email" icon={<MailIcon />} error={errors.email?.message} {...register("email")} />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <DivineInput staticLabel iconPosition="start" label="Mobile number" icon={<span className="text-[13.5px] font-semibold text-ink-500">+65</span>} error={errors.mobileNumber?.message} {...register("mobileNumber", { onChange: (e) => { e.target.value = sanitizeMobileInput(e.target.value); } })} />

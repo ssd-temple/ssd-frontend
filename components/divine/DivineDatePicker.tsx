@@ -34,6 +34,8 @@ type DivineDatePickerProps = {
    *  DivineListbox always shows. Off by default so POS keeps its plain
    *  gray/gold-focus border. */
   staticLabel?: boolean;
+  /** Red asterisk after the label (admin forms). Does not change validation. */
+  required?: boolean;
   /** "single" (default) uses `value`/`onChange`. "multiple" uses `values`/`onChangeValues`
    *  and keeps the calendar open so several days can be ticked. "range" uses
    *  `rangeValue`/`onChangeRange` — first click is the start, second the end. */
@@ -89,6 +91,7 @@ export default function DivineDatePicker({
   placeholder = "Select a date",
   containerClassName = "",
   staticLabel = false,
+  required = false,
   mode = "single",
   values = [],
   onChangeValues,
@@ -268,6 +271,7 @@ export default function DivineDatePicker({
       {staticLabel && (
         <label id={labelId} className={FORM_LABEL}>
           {label}
+          {required && <span className="text-crimson-500"> *</span>}
         </label>
       )}
       <div className={outerWrapClass}>

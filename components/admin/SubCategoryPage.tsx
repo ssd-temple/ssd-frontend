@@ -318,8 +318,9 @@ export default function SubCategoryPage() {
         }
       >
         <form id="sub-category-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Sub Category Name" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Sub Category Name" required error={errors.name?.message} {...register("name")} />
             <TamilNameField staticLabel
               englishName={nameValue}
               value={tamilNameValue}
@@ -328,7 +329,7 @@ export default function SubCategoryPage() {
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Sub Category Code" error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Sub Category Code" required error={errors.code?.message} {...register("code")} />
             <DivineInput staticLabel
               label="Display Order"
               type="number"
@@ -342,7 +343,7 @@ export default function SubCategoryPage() {
             name="category"
             render={({ field }) => (
               <DivineListbox
-                label="Category"
+                label="Category" required
                 value={field.value}
                 onChange={field.onChange}
                 options={categoryOptions}

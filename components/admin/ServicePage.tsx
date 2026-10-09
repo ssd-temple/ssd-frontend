@@ -51,7 +51,6 @@ export type Service = {
   salePrice: number;
   isFamilyMembersRequired: boolean;
   maxFamilyMembers: number;
-  sessionRequired: boolean;
   isInventoryRequired: boolean;
   thresholdCount: number;
   bookingCutoffDate: string | null;
@@ -83,10 +82,9 @@ const schema = z
     printingGroup: z.string(),
     categoryDetails: z.array(categoryDetailSchema),
     generalLedger: z.string().min(1, "GL account is required"),
-    salePrice: z.number().min(0, "Must be 0 or more"),
+    salePrice: z.number({ message: "Enter a price" }).min(0.01, "Must be greater than 0 (at least 0.01)"),
     isFamilyMembersRequired: z.boolean(),
     maxFamilyMembers: z.number().int().min(1),
-    sessionRequired: z.boolean(),
     isInventoryRequired: z.boolean(),
     thresholdCount: z.number().int().min(0),
     bookingCutoffDate: z.string(),
@@ -120,7 +118,6 @@ const DEFAULT_VALUES: FormValues = {
   salePrice: 0,
   isFamilyMembersRequired: false,
   maxFamilyMembers: 2,
-  sessionRequired: false,
   isInventoryRequired: false,
   thresholdCount: 0,
   bookingCutoffDate: "",
@@ -236,7 +233,6 @@ export default function ServicePage() {
       salePrice: service.salePrice,
       isFamilyMembersRequired: service.isFamilyMembersRequired,
       maxFamilyMembers: service.maxFamilyMembers,
-      sessionRequired: service.sessionRequired,
       isInventoryRequired: service.isInventoryRequired,
       thresholdCount: service.thresholdCount,
       bookingCutoffDate: service.bookingCutoffDate ? service.bookingCutoffDate.slice(0, 10) : "",
@@ -435,9 +431,10 @@ export default function ServicePage() {
         }
       >
         <form id="service-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <DivineInput staticLabel label="Service Code" error={errors.code?.message} {...register("code")} />
-            <DivineInput staticLabel label="Service Name" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Service Code" required error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Service Name" required error={errors.name?.message} {...register("name")} />
             <TamilNameField staticLabel
               englishName={nameValue}
               value={tamilNameValue}
@@ -452,7 +449,7 @@ export default function ServicePage() {
               name="generalLedger"
               render={({ field }) => (
                 <DivineListbox
-                  label="General Ledger (GL)"
+                  label="General Ledger (GL)" required
                   value={field.value}
                   onChange={field.onChange}
                   options={glOptions}
@@ -500,7 +497,7 @@ export default function ServicePage() {
                   name="deityMapping"
                   render={({ field }) => (
                     <DivineMultiSelect
-                      label="Deity Mapping"
+                      label="Deity Mapping" required
                       values={field.value}
                       onChange={field.onChange}
                       options={deityOptions}
@@ -520,7 +517,7 @@ export default function ServicePage() {
                   name="printingGroup"
                   render={({ field }) => (
                     <DivineListbox
-                      label="Printing Group"
+                      label="Printing Group" required
                       value={field.value}
                       onChange={field.onChange}
                       options={printingGroupOptions}
@@ -547,7 +544,7 @@ export default function ServicePage() {
 
             {fields.length > 0 && (
               <div className="hidden grid-cols-[1fr_1fr_90px_40px] gap-3 border-b border-gray-200 bg-gray-50 px-4 py-2 text-[11px] uppercase tracking-wide text-gray-500 sm:grid">
-                <span>Category</span>
+                <span>Category <span className="text-crimson-500">*</span></span>
                 <span>Sub Category</span>
                 <span>Order</span>
                 <span />
@@ -645,11 +642,6 @@ export default function ServicePage() {
                 {...register("maxFamilyMembers", { valueAsNumber: true })}
               />
             )}
-            <Controller
-              control={control}
-              name="sessionRequired"
-              render={({ field }) => <DivineRadioGroup boxed label="Session Required" value={field.value} onChange={field.onChange} />}
-            />
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

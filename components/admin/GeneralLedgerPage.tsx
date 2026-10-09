@@ -291,9 +291,10 @@ export default function GeneralLedgerPage() {
         }
       >
         <form id="gl-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <DivineInput staticLabel label="Name" error={errors.name?.message} {...register("name")} />
-            <DivineInput staticLabel label="Code" error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Name" required error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Code" required error={errors.code?.message} {...register("code")} />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Controller
@@ -301,7 +302,7 @@ export default function GeneralLedgerPage() {
               name="gstType"
               render={({ field }) => (
                 <DivineListbox
-                  label="GST Type"
+                  label="GST Type" required
                   value={field.value}
                   onChange={field.onChange}
                   options={GST_TYPE_OPTIONS}
@@ -315,7 +316,7 @@ export default function GeneralLedgerPage() {
               name="groupLevel1"
               render={({ field }) => (
                 <DivineListbox
-                  label="GL Group — Level 1"
+                  label="GL Group — Level 1" required
                   value={field.value}
                   onChange={(v) => {
                     field.onChange(v);

@@ -246,6 +246,7 @@ export default function GstPage() {
         }
       >
         <form id="gst-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Controller
               control={control}

@@ -392,16 +392,17 @@ export default function HallPage() {
         }
       >
         <form id="hall-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Hall Name" error={errors.name?.message} {...register("name")} />
-            <DivineInput staticLabel label="Hall Code" error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Hall Name" required error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Hall Code" required error={errors.code?.message} {...register("code")} />
           </div>
           <div className="grid grid-cols-3 gap-4">
             <Controller
               control={control}
               name="category"
               render={({ field }) => (
-                <DivineListbox label="Hall Category" value={field.value} onChange={field.onChange} options={categoryOptions} error={errors.category?.message} />
+                <DivineListbox label="Hall Category" required value={field.value} onChange={field.onChange} options={categoryOptions} error={errors.category?.message} />
               )}
             />
             <DivineInput

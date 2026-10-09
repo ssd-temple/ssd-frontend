@@ -282,6 +282,7 @@ export default function GlGroupPage() {
         }
       >
         <form id="gl-group-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           {activeLevel >= 2 && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {editing ? (
@@ -350,13 +351,13 @@ export default function GlGroupPage() {
               </div>
             ) : (
               <DivineInput staticLabel
-                label="Code"
+                label="Code" required
                 error={errors.code?.message}
                 hint="Code cannot be changed after the group is created."
                 {...register("code")}
               />
             )}
-            <DivineInput staticLabel
+            <DivineInput staticLabel required
               label={`Level ${editing?.level ?? activeLevel} Name`}
               error={errors.name?.message}
               {...register("name")}

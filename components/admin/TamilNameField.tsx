@@ -13,6 +13,8 @@ type Props = {
   error?: string;
   /** Passed straight through to the underlying DivineInput. */
   staticLabel?: boolean;
+  /** Red asterisk after the label. Does not change validation. */
+  required?: boolean;
 };
 
 const LATIN_ONLY = /^[a-zA-Z\s]+$/;
@@ -28,7 +30,7 @@ const LATIN_ONLY = /^[a-zA-Z\s]+$/;
  *    ("kovil") drops down Tamil spelling candidates ("கோவில்", "கோயில்", ...)
  *    to pick from — the same experience as Google's Tamil Input Tools.
  */
-export default function TamilNameField({ label = "Tamil Name", englishName, value, onChange, error, staticLabel = false }: Props) {
+export default function TamilNameField({ label = "Tamil Name", englishName, value, onChange, error, staticLabel = false, required = false }: Props) {
   const [suggestion, setSuggestion] = useState("");
   const [candidates, setCandidates] = useState<string[]>([]);
   const [showCandidates, setShowCandidates] = useState(false);
@@ -98,6 +100,7 @@ export default function TamilNameField({ label = "Tamil Name", englishName, valu
         }}
         autoComplete="off"
         staticLabel={staticLabel}
+        required={required}
       />
 
       {candidatesVisible && (

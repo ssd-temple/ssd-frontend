@@ -302,6 +302,7 @@ export default function CmsMenuPage() {
         }
       >
         <form id="cms-menu-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-2 gap-4">
             <DivineInput staticLabel label="Code" error={errors.code?.message} {...register("code")} />
             <DivineInput staticLabel label="Display Order" type="number" error={errors.displayOrder?.message} {...register("displayOrder", { valueAsNumber: true })} />

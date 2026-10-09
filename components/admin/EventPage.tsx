@@ -135,7 +135,7 @@ const schema = z
     termsAndConditions: z.string().trim().max(5000),
     isSlotRequired: z.boolean(),
     slotDetails: z.array(slotDetailSchema),
-    salePrice: z.number().min(0, "Must be 0 or more"),
+    salePrice: z.number({ message: "Enter a price" }).min(0.01, "Must be greater than 0 (at least 0.01)"),
     generalLedger: z.string().min(1, "GL account is required"),
     displayOrder: z.number().int().min(0),
     posVisibility: z.boolean(),
@@ -503,9 +503,10 @@ export default function EventPage() {
         }
       >
         <form id="event-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <DivineInput staticLabel label="Event Code" error={errors.code?.message} {...register("code")} />
-            <DivineInput staticLabel label="Event Name" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Event Code" required error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Event Name" required error={errors.name?.message} {...register("name")} />
             <TamilNameField staticLabel
               englishName={nameValue}
               value={tamilNameValue}
@@ -531,7 +532,7 @@ export default function EventPage() {
               name="category"
               render={({ field }) => (
                 <DivineListbox
-                  label="Category"
+                  label="Category" required
                   value={field.value}
                   onChange={field.onChange}
                   options={categoryOptions}
@@ -596,7 +597,7 @@ export default function EventPage() {
                 name="startDate"
                 render={({ field }) => (
                   <DivineDatePicker staticLabel
-                    label="Event Date"
+                    label="Event Date" required
                     value={field.value}
                     onChange={field.onChange}
                     error={errors.startDate?.message}
@@ -612,7 +613,7 @@ export default function EventPage() {
                   <div>
                     <DivineDatePicker staticLabel
                       mode="multiple"
-                      label="Event Dates"
+                      label="Event Dates" required
                       values={field.value}
                       onChangeValues={field.onChange}
                       placeholder="Select one or more dates"
@@ -653,7 +654,7 @@ export default function EventPage() {
                     render={({ field: endField }) => (
                       <DivineDatePicker staticLabel
                         mode="range"
-                        label="Event Date Range"
+                        label="Event Date Range" required
                         rangeValue={{ start: startField.value, end: endField.value }}
                         onChangeRange={(start, end) => {
                           startField.onChange(start);
@@ -705,10 +706,10 @@ export default function EventPage() {
               <div className="overflow-x-auto">
               {slotFields.length > 0 && (
                 <div className="hidden min-w-[72rem] grid-cols-[minmax(10rem,1.4fr)_10.5rem_11rem_11rem_7rem_6rem_9rem_2.75rem] gap-2 border-b border-gray-200 bg-gray-50 px-4 py-2 text-[11px] uppercase tracking-wide text-gray-500 lg:grid">
-                  <span>Slot Name</span>
-                  <span>Slot Date</span>
-                  <span>Start Time</span>
-                  <span>End Time</span>
+                  <span>Slot Name <span className="text-crimson-500">*</span></span>
+                  <span>Slot Date <span className="text-crimson-500">*</span></span>
+                  <span>Start Time <span className="text-crimson-500">*</span></span>
+                  <span>End Time <span className="text-crimson-500">*</span></span>
                   <span>No. of Seats</span>
                   <span>Booked</span>
                   <span>Status</span>
@@ -881,7 +882,7 @@ export default function EventPage() {
               name="generalLedger"
               render={({ field }) => (
                 <DivineListbox
-                  label="General Ledger (GL)"
+                  label="General Ledger (GL)" required
                   value={field.value}
                   onChange={field.onChange}
                   options={glOptions}

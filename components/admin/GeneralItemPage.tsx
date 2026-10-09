@@ -418,9 +418,10 @@ export default function GeneralItemPage() {
         }
       >
         <form id="general-item-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <DivineInput staticLabel label="Item Code" error={errors.code?.message} {...register("code")} />
-            <DivineInput staticLabel label="Item Name" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Item Code" required error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Item Name" required error={errors.name?.message} {...register("name")} />
             <TamilNameField
               englishName={nameValue}
               value={tamilNameValue}
@@ -436,7 +437,7 @@ export default function GeneralItemPage() {
               name="generalLedger"
               render={({ field }) => (
                 <DivineListbox
-                  label="General Ledger (GL)"
+                  label="General Ledger (GL)" required
                   value={field.value}
                   onChange={field.onChange}
                   options={glOptions}
@@ -450,7 +451,7 @@ export default function GeneralItemPage() {
               name="printingGroup"
               render={({ field }) => (
                 <DivineListbox
-                  label="Printing Group"
+                  label="Printing Group" required
                   value={field.value}
                   onChange={field.onChange}
                   options={printingGroupOptions}
@@ -485,7 +486,7 @@ export default function GeneralItemPage() {
 
             {fields.length > 0 && (
               <div className="hidden grid-cols-[1fr_1fr_90px_40px] gap-3 border-b border-gray-200 bg-gray-50 px-4 py-2 text-[11px] uppercase tracking-wide text-gray-500 sm:grid">
-                <span>Category</span>
+                <span>Category <span className="text-crimson-500">*</span></span>
                 <span>Sub Category</span>
                 <span>Order</span>
                 <span />

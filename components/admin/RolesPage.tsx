@@ -219,8 +219,9 @@ export default function RolesPage() {
         }
       >
         <form id="role-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <DivineInput staticLabel label="Role name" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Role name" required error={errors.name?.message} {...register("name")} />
             {/* Shown on create too — it defaults to Active, and an admin
                 setting up a role ahead of time should be able to park it
                 inactive rather than create it live and edit it straight after. */}

@@ -286,13 +286,14 @@ export default function HallPackagePage() {
         }
       >
         <form id="hall-package-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Package Name" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Package Name" required error={errors.name?.message} {...register("name")} />
             <Controller
               control={control}
               name="hallPurpose"
               render={({ field }) => (
-                <DivineListbox label="Hall Purpose" value={field.value} onChange={field.onChange} options={purposeOptions} error={errors.hallPurpose?.message} />
+                <DivineListbox label="Hall Purpose" required value={field.value} onChange={field.onChange} options={purposeOptions} error={errors.hallPurpose?.message} />
               )}
             />
           </div>
@@ -301,7 +302,7 @@ export default function HallPackagePage() {
             control={control}
             name="halls"
             render={({ field }) => (
-              <DivineMultiSelect label="Halls" values={field.value} onChange={field.onChange} options={hallOptions} error={errors.halls?.message} />
+              <DivineMultiSelect label="Halls" required values={field.value} onChange={field.onChange} options={hallOptions} error={errors.halls?.message} />
             )}
           />
 

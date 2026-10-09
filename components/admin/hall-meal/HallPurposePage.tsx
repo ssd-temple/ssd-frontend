@@ -193,8 +193,9 @@ export default function HallPurposePage() {
         }
       >
         <form id="hall-purpose-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Purpose Name" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Purpose Name" required error={errors.name?.message} {...register("name")} />
             <Controller
               control={control}
               name="status"

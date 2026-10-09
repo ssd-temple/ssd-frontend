@@ -239,8 +239,9 @@ export default function FoodPackagePage() {
         }
       >
         <form id="food-package-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Food Package Name" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Food Package Name" required error={errors.name?.message} {...register("name")} />
             <Controller
               control={control}
               name="status"
@@ -273,7 +274,7 @@ export default function FoodPackagePage() {
             control={control}
             name="menuItemIds"
             render={({ field }) => (
-              <DivineMultiSelect label="Menu Items" values={field.value} onChange={field.onChange} options={menuItemOptions} error={errors.menuItemIds?.message} />
+              <DivineMultiSelect label="Menu Items" required values={field.value} onChange={field.onChange} options={menuItemOptions} error={errors.menuItemIds?.message} />
             )}
           />
           <DivineMasterImageUpload

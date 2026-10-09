@@ -346,9 +346,10 @@ export default function PrintingGroupPage() {
         }
       >
         <form id="printing-group-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <DivineInput staticLabel label="Code" error={errors.code?.message} {...register("code")} />
-            <DivineInput staticLabel label="Name" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Code" required error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Name" required error={errors.name?.message} {...register("name")} />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Controller

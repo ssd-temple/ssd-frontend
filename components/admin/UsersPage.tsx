@@ -352,11 +352,12 @@ export default function UsersPage() {
         }
       >
         <form id="user-create-form" onSubmit={submitCreate} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <DivineInput staticLabel label="Full name" icon={<UserIcon />} error={createForm.formState.errors.name?.message} {...createForm.register("name")} />
+            <DivineInput staticLabel label="Full name" required icon={<UserIcon />} error={createForm.formState.errors.name?.message} {...createForm.register("name")} />
             <DivineInput staticLabel iconPosition="start" label="Mobile number" icon={<span className="text-[13.5px] font-semibold text-ink-500">+65</span>} error={createForm.formState.errors.mobileNumber?.message} {...createForm.register("mobileNumber", { onChange: (e) => { e.target.value = sanitizeMobileInput(e.target.value); } })} />
           </div>
-          <DivineInput staticLabel label="Email address" type="email" icon={<MailIcon />} error={createForm.formState.errors.email?.message} {...createForm.register("email")} />
+          <DivineInput staticLabel label="Email address" required type="email" icon={<MailIcon />} error={createForm.formState.errors.email?.message} {...createForm.register("email")} />
           <DivineImageUpload label="Profile photo" onChange={setCreateImage} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Controller
@@ -434,11 +435,12 @@ export default function UsersPage() {
         }
       >
         <form id="user-edit-form" onSubmit={submitEdit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <DivineInput staticLabel label="Full name" icon={<UserIcon />} error={editForm.formState.errors.name?.message} {...editForm.register("name")} />
+            <DivineInput staticLabel label="Full name" required icon={<UserIcon />} error={editForm.formState.errors.name?.message} {...editForm.register("name")} />
             <DivineInput staticLabel iconPosition="start" label="Mobile number" icon={<span className="text-[13.5px] font-semibold text-ink-500">+65</span>} error={editForm.formState.errors.mobileNumber?.message} {...editForm.register("mobileNumber", { onChange: (e) => { e.target.value = sanitizeMobileInput(e.target.value); } })} />
           </div>
-          <DivineInput staticLabel label="Email address" type="email" icon={<MailIcon />} error={editForm.formState.errors.email?.message} {...editForm.register("email")} />
+          <DivineInput staticLabel label="Email address" required type="email" icon={<MailIcon />} error={editForm.formState.errors.email?.message} {...editForm.register("email")} />
           <DivineImageUpload label="Profile photo" value={editing?.profileImage} onChange={setEditImage} />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Controller

@@ -237,8 +237,9 @@ export default function NakshathiramPage() {
         }
       >
         <form id="nakshathiram-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Code" error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Code" required error={errors.code?.message} {...register("code")} />
             <DivineInput staticLabel
               label="Display Order"
               type="number"
@@ -248,8 +249,9 @@ export default function NakshathiramPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Nakshathiram" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Nakshathiram" required error={errors.name?.message} {...register("name")} />
             <TamilNameField staticLabel
+              required
               label="Tamil"
               englishName={nameValue}
               value={tamilNameValue}
@@ -259,8 +261,8 @@ export default function NakshathiramPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Rasi" error={errors.rasi?.message} {...register("rasi")} />
-            <DivineInput staticLabel label="Tamil Rasi" error={errors.tamilRasi?.message} {...register("tamilRasi")} />
+            <DivineInput staticLabel label="Rasi" required error={errors.rasi?.message} {...register("rasi")} />
+            <DivineInput staticLabel label="Tamil Rasi" required error={errors.tamilRasi?.message} {...register("tamilRasi")} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

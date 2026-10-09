@@ -205,9 +205,10 @@ export default function UnitPage() {
         }
       >
         <form id="unit-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <DivineInput staticLabel label="Unit Code" error={errors.unitCode?.message} {...register("unitCode")} />
-            <DivineInput staticLabel label="Unit Name" error={errors.unitName?.message} {...register("unitName")} />
+            <DivineInput staticLabel label="Unit Code" required error={errors.unitCode?.message} {...register("unitCode")} />
+            <DivineInput staticLabel label="Unit Name" required error={errors.unitName?.message} {...register("unitName")} />
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Controller

@@ -178,6 +178,7 @@ export default function InventoryAdjustmentPage() {
         }
       >
         <form id="inventory-adjustment-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Controller
               control={control}
@@ -201,6 +202,7 @@ export default function InventoryAdjustmentPage() {
               render={({ field }) => (
                 <DivineListbox
                   label={`Select ${refType}`}
+                  required
                   value={field.value}
                   onChange={field.onChange}
                   options={refOptions}

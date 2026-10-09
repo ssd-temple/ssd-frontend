@@ -18,6 +18,8 @@ type DivineTimePickerProps = {
   containerClassName?: string;
   /** Same convention as DivineDatePicker's staticLabel — an admin master-form field. */
   staticLabel?: boolean;
+  /** Red asterisk after the label (admin forms). Does not change validation. */
+  required?: boolean;
   /** Admin form-field look (same height and border as staticLabel) with the
    *  label kept for screen readers only - for table rows whose column header
    *  already names the field. */
@@ -50,6 +52,7 @@ export default function DivineTimePicker({
   placeholder = "Select a time",
   containerClassName = "",
   staticLabel = false,
+  required = false,
   compact = false,
 }: DivineTimePickerProps) {
   const chrome = staticLabel || compact;
@@ -148,6 +151,7 @@ export default function DivineTimePicker({
       {chrome && (
         <label id={labelId} className={staticLabel ? FORM_LABEL : "sr-only"}>
           {label}
+          {required && <span className="text-crimson-500"> *</span>}
         </label>
       )}
       <div className={outerWrapClass}>

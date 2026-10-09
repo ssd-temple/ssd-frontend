@@ -301,8 +301,9 @@ export default function CategoryPage() {
         }
       >
         <form id="category-form" onSubmit={submit} noValidate className="space-y-5">
+          <p className="text-right text-[12px] text-crimson-500">* denotes mandatory fields</p>
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Category Name" error={errors.name?.message} {...register("name")} />
+            <DivineInput staticLabel label="Category Name" required error={errors.name?.message} {...register("name")} />
             <TamilNameField staticLabel
               englishName={nameValue}
               value={tamilNameValue}
@@ -311,7 +312,7 @@ export default function CategoryPage() {
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <DivineInput staticLabel label="Category Code" error={errors.code?.message} {...register("code")} />
+            <DivineInput staticLabel label="Category Code" required error={errors.code?.message} {...register("code")} />
             <DivineInput staticLabel
               label="Display Order"
               type="number"
