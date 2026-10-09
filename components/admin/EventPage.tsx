@@ -16,7 +16,6 @@ import DivineMultiSelect from "../divine/DivineMultiSelect";
 import DivineDatePicker from "../divine/DivineDatePicker";
 import DivineTimePicker from "../divine/DivineTimePicker";
 import DivineRadioGroup from "../divine/DivineRadioGroup";
-import DivineOptionGroup from "../divine/DivineOptionGroup";
 import DivineStatusSelect from "../divine/DivineStatusSelect";
 import DivineButton from "../divine/DivineButton";
 import DivineMasterImageUpload from "../divine/DivineMasterImageUpload";
@@ -66,7 +65,9 @@ export type Event = {
   hasBookings?: boolean;
   hasHeldSeats?: boolean;
   salePrice: number;
-  gstClassification: string;
+  generalLedger?: { _id: string; name: string; code?: string } | null;
+  /** Legacy - events saved before the General Ledger field. */
+  gstClassification?: string;
   displayOrder: number;
   posVisibility: boolean;
   publicVisibility: boolean;
@@ -75,12 +76,6 @@ export type Event = {
   /** Wide banner shown in the Customer Portal's slider and event cards. */
   sliderImage: string | null;
 };
-
-const GST_CLASSIFICATION_OPTIONS = [
-  { value: "APPLICABLE", label: "Applicable" },
-  { value: "EXEMPTED", label: "Exempted" },
-  { value: "OUT_OF_SCOPE", label: "Out of Scope" },
-];
 
 const DATE_TYPE_OPTIONS = [
   { value: "SINGLE", label: "Single date" },
@@ -141,7 +136,7 @@ const schema = z
     isSlotRequired: z.boolean(),
     slotDetails: z.array(slotDetailSchema),
     salePrice: z.number().min(0, "Must be 0 or more"),
-    gstClassification: z.string().min(1, "GST classification is required"),
+    generalLedger: z.string().min(1, "GL account is required"),
     displayOrder: z.number().int().min(0),
     posVisibility: z.boolean(),
     publicVisibility: z.boolean(),
@@ -213,7 +208,7 @@ const DEFAULT_VALUES: FormValues = {
   isSlotRequired: false,
   slotDetails: [],
   salePrice: 0,
-  gstClassification: "",
+  generalLedger: "",
   displayOrder: 1,
   posVisibility: true,
   publicVisibility: true,
@@ -238,6 +233,7 @@ export default function EventPage() {
   const [categoryOptions, setCategoryOptions] = useState<ListboxOption[]>([]);
   const [subCategoryOptions, setSubCategoryOptions] = useState<ListboxOption[]>([]);
   const [deityOptions, setDeityOptions] = useState<ListboxOption[]>([]);
+  const [glOptions, setGlOptions] = useState<ListboxOption[]>([]);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -257,6 +253,7 @@ export default function EventPage() {
     fetchOptions("/masters/categories").then(setCategoryOptions);
     fetchOptions("/masters/sub-categories").then(setSubCategoryOptions);
     fetchOptions("/masters/deities").then(setDeityOptions);
+    fetchOptions("/masters/general-ledgers").then(setGlOptions);
   }, []);
 
   useEffect(() => {
@@ -329,7 +326,7 @@ export default function EventPage() {
         status: s.status,
       })),
       salePrice: event.salePrice,
-      gstClassification: event.gstClassification,
+      generalLedger: event.generalLedger?._id ?? "",
       displayOrder: event.displayOrder,
       posVisibility: event.posVisibility,
       publicVisibility: event.publicVisibility,
@@ -685,102 +682,6 @@ export default function EventPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Controller
-              control={control}
-              name="isFamilyMembersRequired"
-              render={({ field }) => (
-                <DivineRadioGroup
-                  boxed
-                  label="Family Members Required"
-                  value={field.value}
-                  onChange={(v) => {
-                    field.onChange(v);
-                    if (v) setValue("maxFamilyMembers", 2);
-                  }}
-                />
-              )}
-            />
-            {isFamilyMembersRequired && (
-              <DivineInput
-                staticLabel
-                label="Max Family Members"
-                type="number"
-                error={errors.maxFamilyMembers?.message}
-                {...register("maxFamilyMembers", { valueAsNumber: true })}
-              />
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <DivineInput staticLabel
-              label="Sale Price (GST Inclusive)"
-              type="number"
-              step="0.01"
-              error={errors.salePrice?.message}
-              {...register("salePrice", { valueAsNumber: true })}
-            />
-            <Controller
-              control={control}
-              name="gstClassification"
-              render={({ field }) => (
-                <DivineOptionGroup boxed
-                  label="GST Classification"
-                  value={field.value}
-                  onChange={field.onChange}
-                  options={GST_CLASSIFICATION_OPTIONS}
-                  error={errors.gstClassification?.message}
-                />
-              )}
-            />
-            <DivineInput staticLabel
-              label="Display Order"
-              type="number"
-              error={errors.displayOrder?.message}
-              {...register("displayOrder", { valueAsNumber: true })}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Controller
-              control={control}
-              name="posVisibility"
-              render={({ field }) => <DivineRadioGroup boxed label="Temple POS" value={field.value} onChange={field.onChange} />}
-            />
-            <Controller
-              control={control}
-              name="publicVisibility"
-              render={({ field }) => <DivineRadioGroup boxed label="Customer POS" value={field.value} onChange={field.onChange} />}
-            />
-            <Controller
-              control={control}
-              name="status"
-              render={({ field }) => (
-                <DivineStatusSelect value={field.value} onChange={field.onChange} disabled={Boolean(editing?.hasBookings)} />
-              )}
-            />
-          </div>
-
-          <DivineMasterImageUpload
-            label="Event Image"
-            value={editing?.image}
-            onChange={(file) => {
-              (editing ? setEditImage : setCreateImage)(file);
-              setImageRemoved(!file);
-            }}
-          />
-
-          <DivineMasterImageUpload
-            label="Slider Image"
-            value={editing?.sliderImage}
-            maxBytes={300 * 1024}
-            hint="Wide banner for the Customer Portal — shown as the slider background and on the event card. Recommended 1920 × 800 · JPG, PNG or WebP · up to 300 KB"
-            onChange={(file) => {
-              (editing ? setEditSlider : setCreateSlider)(file);
-              setSliderRemoved(!file);
-            }}
-          />
-
           {isSlotRequired && (
             <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-orange-100 bg-orange-50 px-4 py-3">
@@ -947,6 +848,104 @@ export default function EventPage() {
               )}
             </div>
           )}
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Controller
+              control={control}
+              name="isFamilyMembersRequired"
+              render={({ field }) => (
+                <DivineRadioGroup
+                  boxed
+                  label="Family Members Required"
+                  value={field.value}
+                  onChange={(v) => {
+                    field.onChange(v);
+                    if (v) setValue("maxFamilyMembers", 2);
+                  }}
+                />
+              )}
+            />
+            {isFamilyMembersRequired && (
+              <DivineInput
+                staticLabel
+                label="Max Family Members"
+                type="number"
+                error={errors.maxFamilyMembers?.message}
+                {...register("maxFamilyMembers", { valueAsNumber: true })}
+              />
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <DivineInput staticLabel
+              label="Sale Price (GST Inclusive)"
+              type="number"
+              step="0.01"
+              error={errors.salePrice?.message}
+              {...register("salePrice", { valueAsNumber: true })}
+            />
+            <Controller
+              control={control}
+              name="generalLedger"
+              render={({ field }) => (
+                <DivineListbox
+                  label="General Ledger (GL)"
+                  value={field.value}
+                  onChange={field.onChange}
+                  options={glOptions}
+                  placeholder="Select GL Account"
+                  error={errors.generalLedger?.message}
+                />
+              )}
+            />
+            <DivineInput staticLabel
+              label="Display Order"
+              type="number"
+              error={errors.displayOrder?.message}
+              {...register("displayOrder", { valueAsNumber: true })}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Controller
+              control={control}
+              name="posVisibility"
+              render={({ field }) => <DivineRadioGroup boxed label="Temple POS" value={field.value} onChange={field.onChange} />}
+            />
+            <Controller
+              control={control}
+              name="publicVisibility"
+              render={({ field }) => <DivineRadioGroup boxed label="Customer POS" value={field.value} onChange={field.onChange} />}
+            />
+            <Controller
+              control={control}
+              name="status"
+              render={({ field }) => (
+                <DivineStatusSelect value={field.value} onChange={field.onChange} disabled={Boolean(editing?.hasBookings)} />
+              )}
+            />
+          </div>
+
+          <DivineMasterImageUpload
+            label="Event Image"
+            value={editing?.image}
+            onChange={(file) => {
+              (editing ? setEditImage : setCreateImage)(file);
+              setImageRemoved(!file);
+            }}
+          />
+
+          <DivineMasterImageUpload
+            label="Slider Image"
+            value={editing?.sliderImage}
+            maxBytes={300 * 1024}
+            hint="Wide banner for the Customer Portal — shown as the slider background and on the event card. Recommended 1920 × 800 · JPG, PNG or WebP · up to 300 KB"
+            onChange={(file) => {
+              (editing ? setEditSlider : setCreateSlider)(file);
+              setSliderRemoved(!file);
+            }}
+          />
+
         </form>
       </FormDrawer>
     </>
