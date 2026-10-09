@@ -67,7 +67,9 @@ export function MasterImageCell({
   alt?: string;
   rounded?: "lg" | "full";
 }) {
-  const url = resolveImageUrl(src);
+  const [failed, setFailed] = useState(false);
+  // A picture that cannot be loaded (deleted file, wrong address) reads as "no image", not a broken-image icon.
+  const url = failed ? null : resolveImageUrl(src);
   const [viewing, setViewing] = useState(false);
   const shape = rounded === "full" ? "rounded-full" : "rounded-lg";
 
@@ -76,7 +78,7 @@ export function MasterImageCell({
       <span className="inline-flex items-center gap-2">
         <span className={`flex h-10 w-10 items-center justify-center overflow-hidden border border-gold-500/20 bg-ivory-100 ${shape}`}>
           {url ? (
-            <img src={url} alt={alt} className="h-full w-full object-cover" />
+            <img src={url} alt={alt} onError={() => setFailed(true)} className="h-full w-full object-cover" />
           ) : (
             <span className="text-[10px] text-ink-500">—</span>
           )}

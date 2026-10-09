@@ -73,7 +73,7 @@ export type Event = {
   publicVisibility: boolean;
   status: number;
   image: string | null;
-  /** Wide banner shown in the Customer Portal's slider and event cards. */
+  /** Legacy wide banner from before the Slider Image field was removed from the form; still shown as a fallback picture. */
   sliderImage: string | null;
 };
 
@@ -245,9 +245,6 @@ export default function EventPage() {
   const [createImage, setCreateImage] = useState<File | null>(null);
   const [editImage, setEditImage] = useState<File | null>(null);
   const [imageRemoved, setImageRemoved] = useState(false);
-  const [createSlider, setCreateSlider] = useState<File | null>(null);
-  const [editSlider, setEditSlider] = useState<File | null>(null);
-  const [sliderRemoved, setSliderRemoved] = useState(false);
 
   useEffect(() => {
     fetchOptions("/masters/categories").then(setCategoryOptions);
@@ -290,8 +287,6 @@ export default function EventPage() {
     reset(DEFAULT_VALUES);
     setCreateImage(null);
     setImageRemoved(false);
-    setCreateSlider(null);
-    setSliderRemoved(false);
     create.setError(null);
     setDrawerOpen(true);
   }
@@ -334,8 +329,6 @@ export default function EventPage() {
     });
     setEditImage(null);
     setImageRemoved(false);
-    setEditSlider(null);
-    setSliderRemoved(false);
     update.setError(null);
     setDrawerOpen(true);
   }
@@ -354,7 +347,6 @@ export default function EventPage() {
       },
       [
         { fieldName: "image", file: editing ? editImage : createImage, existingValue: editing?.image ?? null, removed: imageRemoved },
-        { fieldName: "sliderImage", file: editing ? editSlider : createSlider, existingValue: editing?.sliderImage ?? null, removed: sliderRemoved },
       ],
     );
     const ok = editing ? await update.run(editing._id, payload) : await create.run(payload);
@@ -366,7 +358,7 @@ export default function EventPage() {
   });
 
   const columns: DataTableColumn<Event>[] = [
-    { key: "image", label: "Image", render: (e) => <MasterImageCell src={e.image} alt={e.name} /> },
+    { key: "image", label: "Image", render: (e) => <MasterImageCell src={e.image || e.sliderImage} alt={e.name} /> },
     { key: "code", label: "Code", render: (e) => <span className="font-medium tabular-nums text-amber-700">{e.code}</span> },
     { key: "name", label: "Name", render: (e) => e.name },
     {
@@ -932,17 +924,6 @@ export default function EventPage() {
             onChange={(file) => {
               (editing ? setEditImage : setCreateImage)(file);
               setImageRemoved(!file);
-            }}
-          />
-
-          <DivineMasterImageUpload
-            label="Slider Image"
-            value={editing?.sliderImage}
-            maxBytes={300 * 1024}
-            hint="Wide banner for the Customer Portal — shown as the slider background and on the event card. Recommended 1920 × 800 · JPG, PNG or WebP · up to 300 KB"
-            onChange={(file) => {
-              (editing ? setEditSlider : setCreateSlider)(file);
-              setSliderRemoved(!file);
             }}
           />
 
