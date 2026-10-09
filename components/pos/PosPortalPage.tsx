@@ -4221,6 +4221,9 @@ function CreditCardIcon({ className = "" }: { className?: string }) {
   );
 }
 
+/** Dollar notes offered as one-tap "cash received" amounts in the Collect Payment popup. */
+const CASH_QUICK_AMOUNTS = [1, 2, 5, 10, 50];
+
 function ProceedPaymentModal({
   open,
   onClose,
@@ -4338,6 +4341,40 @@ function ProceedPaymentModal({
               : undefined
           }
         />
+        {isCash && (
+          // One tap fills the field instead of typing - the notes cashiers are
+          // handed most often, plus "Exact" to go back to the total.
+          <div className="flex flex-wrap items-center gap-1.5" aria-label="Quick cash amounts">
+            {CASH_QUICK_AMOUNTS.map((amt) => {
+              const active = Number(amountInput) === amt;
+              return (
+                <button
+                  key={amt}
+                  type="button"
+                  onClick={() => onAmountChange(amt.toFixed(2))}
+                  className={`rounded-lg border px-3.5 py-1.5 text-[13px] font-bold tabular-nums transition-[background-color,color,border-color,transform] duration-150 hover:-translate-y-0.5 active:translate-y-0 ${
+                    active
+                      ? "border-[#7c1527] bg-[#7c1527] text-white shadow-[0_6px_14px_-6px_rgba(124,21,39,0.8)]"
+                      : "border-[#f0b4a0] bg-white text-[#7c1527] hover:bg-[#fff3ee]"
+                  }`}
+                >
+                  ${amt}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => onAmountChange(total.toFixed(2))}
+              className={`rounded-lg border px-3.5 py-1.5 text-[13px] font-bold transition-[background-color,color,border-color,transform] duration-150 hover:-translate-y-0.5 active:translate-y-0 ${
+                Math.abs(Number(amountInput) - total) < 0.005
+                  ? "border-emerald-600 bg-emerald-600 text-white"
+                  : "border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50"
+              }`}
+            >
+              Exact
+            </button>
+          </div>
+        )}
         <div
           className={`flex items-center justify-between rounded-lg px-3 py-2 text-[11.5px] ${
             isPartial

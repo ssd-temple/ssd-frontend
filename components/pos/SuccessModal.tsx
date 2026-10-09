@@ -278,12 +278,13 @@ export function SuccessModal({
                     transition={{ type: "spring", stiffness: 260, damping: 18, delay: 0.9 }}
                     className="mt-2.5 overflow-hidden rounded-2xl border-2 border-[#e6b422] bg-gradient-to-r from-[#fff3c4] via-[#ffe38a] to-[#fff3c4] shadow-[0_10px_26px_rgba(230,180,34,0.45)]"
                   >
+                    <div className="flex items-center justify-between gap-3 border-b-2 border-[#e6b422]/60 bg-white/70 px-3.5 py-2">
+                      <p className="text-left text-[12px] font-bold uppercase tracking-[0.12em] text-[#5c3d0d]">Cash received</p>
+                      <p className="font-sans text-[18px] font-extrabold tabular-nums text-ink-100">{cashChange.received}</p>
+                    </div>
                     <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                      <div className="text-left">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#8a5a10]">Balance to return</p>
-                        <p className="text-[10.5px] text-[#8a5a10]">Cash received {cashChange.received}</p>
-                      </div>
-                      <p className="font-sans text-[28px] font-black leading-none tracking-tight text-[#7c1527]">{cashChange.change}</p>
+                      <p className="text-left text-[12px] font-extrabold uppercase tracking-[0.14em] text-[#8a5a10]">Balance to return</p>
+                      <p className="font-sans text-[30px] font-black leading-none tracking-tight text-[#7c1527]">{cashChange.change}</p>
                     </div>
                   </motion.div>
                 ) : (
